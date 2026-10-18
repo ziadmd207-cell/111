@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  ZEUS — server/.dockerignore
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Python virtualenvs & cache
+__pycache__/
+*/**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+.venv*/
+venv/
+venv*/
+ENV/
+env/
+env*/
+
+# Databases & local data
+*.db
+*.sqlite
+*.sqlite3
+zeus.db
+uploads/
+postgres-data/
+pgdata/
+
+# Logs
+*.log
+logs/
+
+# Tests & IDE
+.pytest_cache/
+.coverage
+htmlcov/
+test_*.py
+.vscode/
+.idea/

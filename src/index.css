@@ -1,0 +1,254 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@300;400;500;600;700&family=Cairo:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 223 49% 10%;
+    --foreground: 220 13% 91%;
+    --card: 221 51% 16%;
+    --card-foreground: 220 13% 91%;
+    --popover: 221 51% 13%;
+    --popover-foreground: 220 13% 91%;
+    --primary: 45 100% 51%;
+    --primary-foreground: 223 49% 10%;
+    --secondary: 218 27% 32%;
+    --secondary-foreground: 220 13% 91%;
+    --muted: 221 40% 20%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 46 100% 82%;
+    --accent-foreground: 223 49% 10%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 220 13% 91%;
+    --border: 221 35% 26%;
+    --input: 221 35% 28%;
+    --ring: 45 100% 51%;
+    --radius: 0.75rem;
+    --font-heading: "Space Grotesk", "Cairo", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "Geist", "Cairo", ui-sans-serif, system-ui, sans-serif;
+    --font-display: "Space Grotesk", "Cairo", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    --zeus-midnight: 223 49% 10%;
+    --zeus-navy: 221 51% 16%;
+    --zeus-steel: 218 27% 32%;
+    --zeus-gold: 45 100% 51%;
+    --zeus-orange: 38 92% 50%;
+    --zeus-brightgold: 45 100% 65%;
+    --zeus-softgold: 46 100% 82%;
+    --zeus-cloud: 220 13% 91%;
+  }
+
+  [data-theme="light"] {
+    --background: 210 45% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 51% 16%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 40% 95%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 214 40% 95%;
+    --muted-foreground: 221 28% 34%;
+    --accent: 214 40% 95%;
+    --accent-foreground: 221 51% 16%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 28% 87%;
+    --input: 214 28% 87%;
+    --ring: 221 51% 30%;
+    --zeus-midnight: 223 49% 10%;
+    --zeus-navy: 221 51% 16%;
+    --zeus-steel: 221 25% 38%;
+    --zeus-gold: 42 72% 43%;
+    --zeus-orange: 39 72% 42%;
+    --zeus-brightgold: 40 68% 38%;
+    --zeus-softgold: 213 35% 94%;
+    --zeus-cloud: 222 47% 11%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html { scroll-behavior: smooth; }
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+    background-image:
+      radial-gradient(60rem 60rem at 80% -10%, rgba(255, 193, 7, 0.08), transparent 60%),
+      radial-gradient(50rem 50rem at -10% 10%, rgba(20, 33, 61, 0.6), transparent 50%);
+    background-attachment: fixed;
+  }
+  [data-theme="light"] body {
+    background-image:
+      radial-gradient(48rem 48rem at 85% -12%, rgba(20, 33, 61, 0.035), transparent 62%),
+      radial-gradient(40rem 40rem at -12% 14%, rgba(20, 33, 61, 0.045), transparent 52%);
+    background-attachment: fixed;
+  }
+  [data-theme="light"] .subscription-logo,
+  [data-theme="light"] .onboarding-logo {
+    background-color: hsl(221 51% 16%);
+  }
+  [data-theme="light"] .landing-logo {
+    background-color: hsl(221 51% 16%);
+  }
+  h1, h2, h3, h4, h5 { @apply font-heading; }
+  ::selection { background: rgba(255, 193, 7, 0.4); color: #0D1426; }
+}
+
+@layer components {
+  .zeus-glass {
+    @apply bg-card/60 backdrop-blur-xl border border-border/70 rounded-2xl;
+  }
+  .zeus-gold-text {
+    background: linear-gradient(135deg, #FFD54F 0%, #FFC107 45%, #F59E0B 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .zeus-gold-border {
+    border: 1px solid rgba(255, 193, 7, 0.45);
+    box-shadow: 0 0 0 1px rgba(255, 193, 7, 0.1), 0 8px 30px -12px rgba(255, 193, 7, 0.35);
+  }
+  .zeus-grid-bg {
+    background-image:
+      linear-gradient(rgba(255, 193, 7, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 193, 7, 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+}
+
+@layer utilities {
+  .animate-fade-up { animation: fadeUp 0.5s ease-out both; }
+  .animate-fade-in { animation: fadeIn 0.4s ease-out both; }
+  .animate-pop { animation: pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+  .animate-float { animation: float 6s ease-in-out infinite; }
+  .animate-pulse-soft { animation: pulseSoft 2.4s ease-in-out infinite; }
+  .animate-typing { animation: typing 1.2s steps(40) infinite; }
+}
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes pulseSoft { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes typing { from { width: 0; } to { width: 100%; } }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 193, 7, 0.35); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 193, 7, 0.55); }
+
+[data-theme="light"] .text-zeus-gold,
+[data-theme="light"] .text-zeus-brightgold {
+  color: hsl(42 72% 38%);
+}
+[data-theme="light"] .zeus-gold-text {
+  background: none;
+  color: hsl(42 72% 38%);
+  -webkit-text-fill-color: currentColor;
+}
+[data-theme="light"] .zeus-gold-border {
+  border-color: hsl(42 65% 62% / 0.55);
+  box-shadow: 0 6px 20px -16px hsl(42 60% 40% / 0.25);
+}
+[data-theme="light"] [class~="bg-zeus-gold"],
+[data-theme="light"] [class~="bg-zeus-brightgold"] {
+  background-color: hsl(221 51% 16%);
+}
+[data-theme="light"] [class*="bg-zeus-gold/"] {
+  background-color: hsl(42 72% 43% / 0.09);
+}
+[data-theme="light"] [class*="hover:bg-zeus-brightgold"]:hover,
+[data-theme="light"] [class*="hover:bg-zeus-gold"]:hover {
+  background-color: hsl(221 51% 23%);
+}
+[data-theme="light"] [class~="bg-zeus-gold"][class~="text-zeus-midnight"],
+[data-theme="light"] [class~="bg-zeus-brightgold"][class~="text-zeus-midnight"],
+[data-theme="light"] [class*="bg-gradient-to"][class~="text-zeus-midnight"] {
+  color: white;
+}
+[data-theme="light"] [class*="border-zeus-gold"] {
+  border-color: hsl(42 65% 62% / 0.55);
+}
+[data-theme="light"] [class*="text-zeus-gold/"],
+[data-theme="light"] [class*="text-zeus-brightgold/"] {
+  color: hsl(42 72% 38% / 0.2);
+}
+[data-theme="light"] .zeus-glass {
+  background-color: hsl(var(--card));
+  border-color: hsl(var(--border) / 0.75);
+  box-shadow: 0 8px 24px -22px hsl(var(--zeus-navy) / 0.35);
+}
+[data-theme="light"] .text-muted-foreground {
+  color: hsl(var(--muted-foreground));
+}
+[data-theme="light"] .subscription-plan-badge {
+  background-image: linear-gradient(135deg, hsl(43 68% 88%), hsl(42 65% 82%));
+  color: hsl(var(--zeus-navy));
+  box-shadow: 0 3px 10px -7px hsl(var(--zeus-navy) / 0.4);
+}
+[data-theme="light"] .subscription-plan-card {
+  background-color: hsl(210 45% 99%);
+  border-color: hsl(214 28% 87%);
+  color: hsl(222 47% 11%);
+  box-shadow: 0 10px 28px -24px hsl(var(--zeus-navy) / 0.45);
+}
+[data-theme="light"] .subscription-plan-featured {
+  background-image: linear-gradient(145deg, hsl(213 48% 95%), hsl(210 45% 99%) 72%);
+  border-color: hsl(var(--zeus-navy) / 0.2);
+}
+[data-theme="light"] .subscription-plan-card .text-foreground,
+[data-theme="light"] .subscription-plan-card .text-foreground\/90 {
+  color: hsl(222 47% 11%);
+}
+[data-theme="light"] .subscription-plan-card .text-muted-foreground {
+  color: hsl(221 28% 34%);
+}
+[data-theme="light"] .subscription-plan-card .text-zeus-brightgold {
+  color: hsl(var(--zeus-navy));
+}
+[data-theme="light"] .subscription-plan-button {
+  border: 1px solid hsl(var(--zeus-navy) / 0.15);
+  background-image: none;
+  background-color: hsl(var(--zeus-navy));
+  color: white;
+}
+[data-theme="light"] .subscription-plan-button:hover {
+  background-color: hsl(221 51% 23%);
+}
+[data-theme="light"] .subscription-form-modal {
+  border-color: hsl(var(--zeus-navy) / 0.18);
+  background-color: hsl(210 45% 99%);
+  color: hsl(222 47% 11%);
+}
+[data-theme="light"] .subscription-form-modal input,
+[data-theme="light"] .subscription-form-modal textarea {
+  background-color: white;
+  border-color: hsl(214 28% 84%);
+  color: hsl(222 47% 11%);
+}
+[data-theme="light"] .subscription-form-modal input::placeholder,
+[data-theme="light"] .subscription-form-modal textarea::placeholder {
+  color: hsl(221 20% 48%);
+}
+[data-theme="light"] .shadow-gold,
+[data-theme="light"] .shadow-gold-sm {
+  box-shadow: 0 6px 20px -16px hsl(var(--zeus-navy) / 0.4);
+}
+
+[data-theme="light"] .subscriptions-page .subscription-plan-button {
+  background-image: none;
+  background-color: #fff;
+  color: hsl(var(--zeus-navy));
+}
+
+[data-theme="light"] .subscriptions-page .subscription-plan-button:hover {
+  background-color: hsl(210 40% 96%);
+}

@@ -1,0 +1,91 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  ZEUS — .dockerignore
+#  Files excluded from the Docker build context (speeds up builds, keeps
+#  secrets out of the image)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Secrets — NEVER bake these into an image
+.env
+.env.*
+server/.env
+server/.env.*
+!.env.example
+!server/.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Node — will be installed fresh inside Stage 1
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Vite output — rebuilt inside Stage 1
+dist/
+dist-ssr/
+.vite/
+
+# Python virtual envs — not needed; pip installs inside container
+.venv/
+.venv*/
+venv/
+venv*/
+ENV/
+env/
+env*/
+__pycache__/
+*/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+server/zeus.db
+postgres-data/
+postgres_data/
+pgdata/
+
+# Uploads (mounted as a Docker volume at runtime, not baked in)
+uploads/
+server/uploads/
+
+# Logs
+*.log
+logs/
+backend.log
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.sw?
+
+# Git
+.git/
+.gitignore
+
+# Docker compose override files (only needed on host)
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Test artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# CI
+.github/
+.circleci/
+
+# Misc
+*.bak
+*.tmp
+README.md

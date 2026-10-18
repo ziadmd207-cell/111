@@ -1,0 +1,100 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  ZEUS — Docker Compose
+#  Services: postgres (DB) + zeus (API + Frontend)
+#
+#  Quick start:
+#    cp .env.example .env       # then fill in your secrets
+#    docker compose up -d       # start everything
+#    docker compose logs -f     # follow logs
+#    docker compose down        # stop
+#    docker compose down -v     # stop + delete volumes (⚠ wipes DB)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL Database ───────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: zeus_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: zeus
+      POSTGRES_USER: zeus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zeuspassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zeus -d zeus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - zeus_net
+
+  # ── ZEUS Application (Backend API + Built Frontend) ───────────────────────
+  zeus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zeus_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Database (points to the postgres service above)
+      DATABASE_URL: postgresql://zeus:${POSTGRES_PASSWORD:-zeuspassword}@postgres:5432/zeus
+
+      # Security (CHANGE THESE IN PRODUCTION!)
+      SECRET_KEY: ${SECRET_KEY:-zeus-change-this-secret-in-production}
+
+      # First admin account (auto-created on startup)
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@zeus.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+
+      # AI providers
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # YouTube Data API v3 (for video search & duration)
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+
+      # CORS (add your domain in production)
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8000}
+
+      # Google OAuth (login/signup via Google)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8000/api/auth/google/callback}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8000}
+
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      # Persist user-uploaded files (payment receipts, avatars, etc.)
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - zeus_net
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+    name: zeus_postgres_data
+  uploads_data:
+    name: zeus_uploads_data
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  zeus_net:
+    name: zeus_network
+    driver: bridge

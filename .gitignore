@@ -1,0 +1,125 @@
+# ========================
+# ZEUS — .gitignore
+# ========================
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+.pyo
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+venv*/
+ENV/
+env/
+env*/
+.env.bak
+env.bak/
+
+# ── Environment / Secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+server/.env
+server/.env.*
+!server/.env.example
+
+# ── Database ─────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+server/zeus.db
+postgres-data/
+pgdata/
+
+# ── Node / Frontend ──────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm
+.yarn/
+
+# Vite / Build output
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# ── Uploads (user files, payment receipts) ───────────────────────────────────
+uploads/
+server/uploads/
+*.jpg~
+*.png~
+
+# ── IDE & OS ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+# Don't ignore docker-compose.yml / Dockerfile
+# But ignore local override files
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+server/logs/
+backend.log
+nohup.out
+
+# ── Python testing / coverage ────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# ── Alembic ──────────────────────────────────────────────────────────────────
+# Keep migrations but ignore compiled stuff
+server/alembic/versions/__pycache__/
+
+# ── Miscellaneous ────────────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp
+*.cache
+.cache/
+.parcel-cache/
