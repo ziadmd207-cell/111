@@ -1,11 +1,26 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import {
-  ShieldCheck, Loader2, Search, Trash2, KeyRound, Crown, RefreshCw, Plus, Pencil, X, Check, Megaphone,
-  CreditCard, Eye, CheckCircle2, XCircle, AlertCircle, Clock, ExternalLink, Sparkles, DollarSign, Key, Save, LifeBuoy, Facebook, Linkedin, Instagram, Music2, MessageCircle
+  Loader2, Search, Trash2, KeyRound, Crown, RefreshCw, Plus, Pencil, X, Check, Megaphone,
+  CreditCard, Eye, CheckCircle2, XCircle, AlertCircle, Clock, ExternalLink, Sparkles, DollarSign, Key, Save, LifeBuoy, Facebook, Linkedin, Instagram, Music2, MessageCircle, Download, Send, Pin, Lock, Unlock
 } from "lucide-react";
 import { api } from "@/api/client";
 import { useI18n } from "@/lib/i18n";
+import AdminSupportChats from "@/pages/AdminSupportChats";
+
+const AI_TASK_LABELS = {
+  discovery: { ar: "تحليل الشخصية والأسئلة", en: "Learner discovery" },
+  planning: { ar: "إنشاء خريطة التعلم", en: "Roadmap generation" },
+  tutor: { ar: "شرح الدروس", en: "Lesson tutor" },
+  companion: { ar: "شات رفيق التعلم", en: "Learning companion chat" },
+  review: { ar: "مراجعة المحتوى", en: "Content review" },
+  quiz: { ar: "إنشاء الاختبارات", en: "Quiz generation" },
+  assessment: { ar: "تقييم الإجابات", en: "Answer assessment" },
+  recommend: { ar: "اقتراح الأهداف", en: "Goal recommendations" },
+  rewrite: { ar: "إعادة صياغة المحتوى", en: "Content rewriting" },
+  jobs: { ar: "البحث عن الوظائف", en: "Job search" },
+};
 
 export default function Admin({ tab: initialTab }) {
   const { lang, dir } = useI18n();
@@ -17,23 +32,15 @@ export default function Admin({ tab: initialTab }) {
   }, [initialTab]);
 
   return (
-    <div dir={dir} className="space-y-6">
-      <div>
-        <h1 className="font-heading font-extrabold text-2xl sm:text-3xl flex items-center gap-2">
-          <ShieldCheck className="text-zeus-gold" style={{ width: 28, height: 28 }} />
-          {isAr ? "لوحة الإدارة" : "Admin Dashboard"}
-        </h1>
-        <p className="text-muted-foreground mt-1 text-sm">{isAr ? "إحصائيات وتحكم كامل في المنصة" : "Platform stats and full control"}</p>
-      </div>
-
+    <div dir={dir} className="admin-page space-y-6">
       <motion.div key={tab} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
         {tab === "stats" && <StatsTab isAr={isAr} />}
         {tab === "users" && <UsersTab isAr={isAr} />}
         {tab === "subscribers" && <SubscribersTab isAr={isAr} />}
         {tab === "communities" && <CommunitiesTab isAr={isAr} />}
-        {tab === "moderation" && <ModerationTab isAr={isAr} />}
         {tab === "broadcast" && <BroadcastTab isAr={isAr} />}
         {tab === "support" && <SupportTab isAr={isAr} />}
+        {tab === "support-chats" && <AdminSupportChats />}
         {tab === "settings" && <SettingsTab isAr={isAr} />}
       </motion.div>
     </div>
@@ -44,13 +51,22 @@ export default function Admin({ tab: initialTab }) {
 function StatsTab({ isAr }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
   const load = async () => {
     setLoading(true);
-    try { setStats(await api.admin.get("/stats")); } catch {}
-    setLoading(false);
+    setError("");
+    try {
+      setStats(await api.admin.get("/stats"));
+    } catch (loadError) {
+      setError(loadError.message || (isAr ? "تعذر تحميل الإحصائيات." : "Could not load statistics."));
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { load(); }, []);
-  if (loading || !stats) return <Spin />;
+  if (loading && !stats) return <Spin />;
+  if (!stats) return <AdminLoadError message={error || (isAr ? "تعذر تحميل الإحصائيات." : "Could not load statistics.")} isAr={isAr} onRetry={load} />;
   const cards = [
     { label: isAr ? "المستخدمون" : "Users", value: stats.users, sub: `+${stats.new7} / 7d` },
     { label: isAr ? "خرائط نشطة" : "Active roadmaps", value: stats.active_roadmaps, sub: `${stats.roadmaps} total` },
@@ -93,9 +109,218 @@ function StatsTab({ isAr }) {
             ))}
           </div>
         </div>
+        <div className="zeus-glass p-5">
+          <h3 className="font-heading font-bold text-sm mb-1">{isAr ? "توزيع درجات الاختبارات" : "Quiz score distribution"}</h3>
+          <p className="mb-4 text-[10px] text-muted-foreground">{isAr ? `بناءً على ${stats.quiz_attempts || 0} درجة فعلية` : `Based on ${stats.quiz_attempts || 0} recorded scores`}</p>
+          <div className="space-y-3">
+            {(stats.quiz_bands || []).map((band) => {
+              const maxBand = Math.max(1, ...(stats.quiz_bands || []).map((item) => item.count));
+              return <div key={band.label}>
+                <div className="mb-1 flex justify-between text-xs"><span>{band.label}</span><strong className="text-zeus-brightgold">{band.count}</strong></div>
+                <div className="h-2 overflow-hidden rounded-full bg-secondary/60"><div className="h-full rounded-full bg-gradient-to-r from-zeus-gold to-zeus-brightgold" style={{ width: `${(band.count / maxBand) * 100}%` }} /></div>
+              </div>;
+            })}
+            {!stats.quiz_attempts && <p className="text-xs text-muted-foreground">{isAr ? "لا توجد درجات مسجلة بعد." : "No recorded quiz scores yet."}</p>}
+          </div>
+        </div>
       </div>
-      <button onClick={load} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-zeus-gold transition"><RefreshCw style={{ width: 13, height: 13 }} /> {isAr ? "تحديث" : "Refresh"}</button>
+      <UsersAnalytics isAr={isAr} refreshKey={refreshKey} />
+      <button disabled={loading} onClick={() => { load(); setRefreshKey((current) => current + 1); }} className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-zeus-gold transition disabled:opacity-50"><RefreshCw className={loading ? "animate-spin" : ""} style={{ width: 13, height: 13 }} /> {isAr ? "تحديث" : "Refresh"}</button>
+      {error && <p role="alert" className="text-sm text-rose-400">{error}</p>}
     </div>
+  );
+}
+
+function UsersAnalytics({ isAr, refreshKey }) {
+  const [users, setUsers] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState({
+    account_type: "all",
+    account_status: "all",
+    subscription_status: "all",
+    plan: "all",
+    payment_status: "all",
+    completion_status: "all",
+    learning_status: "all",
+    performance: "all",
+    sort: "performance_desc",
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState(null);
+  const [exporting, setExporting] = useState(false);
+
+  const filterQuery = () => {
+    const params = new URLSearchParams({ search: search.trim(), ...filters });
+    return params.toString();
+  };
+  const load = async (append = false) => {
+    setLoading(true);
+    setError("");
+    try {
+      const offset = append ? users.length : 0;
+      const result = await api.admin.get(`/users?${filterQuery()}&include_admins=false&limit=200&offset=${offset}`);
+      setUsers((current) => append ? [...current, ...(result.users || [])] : (result.users || []));
+      setTotal(result.total || 0);
+    } catch (loadError) {
+      setError(loadError.message || (isAr ? "تعذر تحميل بيانات المستخدمين." : "Could not load user data."));
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { load(); }, [refreshKey]);
+
+  const exportUsers = async () => {
+    setExporting(true);
+    setError("");
+    try {
+      const blob = await api.admin.download(`/users/export.xlsx?${filterQuery()}`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `zeus-users-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (exportError) {
+      setError(exportError.message || (isAr ? "تعذر تصدير الملف." : "Could not export the file."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportCompletedUsers = async () => {
+    setExporting(true);
+    setError("");
+    try {
+      const blob = await api.admin.download(`/users/export-completed.xlsx?account_type=${encodeURIComponent(filters.account_type)}`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `zeus-completed-users-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (exportError) {
+      setError(exportError.message || (isAr ? "تعذر تصدير المستخدمين المكتملين." : "Could not export completed users."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const updateFilter = (key, value) => {
+    setUsers([]);
+    setTotal(0);
+    setExpanded(null);
+    setFilters((current) => ({ ...current, [key]: value }));
+  };
+  const selectClass = "rounded-xl bg-card border border-border/60 px-3 py-2.5 text-xs outline-none focus:zeus-gold-border";
+  const fields = [
+    { key: "account_type", label: isAr ? "فئة الحساب" : "Account type", options: [["all", isAr ? "كل الحسابات" : "All account types"], ["individual", isAr ? "طلاب أفراد" : "Individual learners"], ["institution", isAr ? "كل حسابات الجهات" : "All institution accounts"], ["partner_student", isAr ? "طلاب الجهات" : "Institution students"], ["partner", isAr ? "حسابات الجهات" : "Institution accounts"], ["doctor", isAr ? "مدرسو الجهات" : "Institution instructors"]] },
+    { key: "account_status", label: isAr ? "حالة الحساب" : "Account", options: [["all", isAr ? "كل الحسابات" : "All accounts"], ["pending", isAr ? "بانتظار التفعيل" : "Pending"], ["active", isAr ? "مفعّل" : "Active"], ["suspended", isAr ? "موقوف" : "Suspended"]] },
+    { key: "subscription_status", label: isAr ? "الاشتراك" : "Subscription", options: [["all", isAr ? "كل حالات الاشتراك" : "All subscriptions"], ["active", isAr ? "اشتراك نشط" : "Active"], ["none", isAr ? "بدون اشتراك" : "No subscription"], ["expired", isAr ? "منتهي" : "Expired"]] },
+    { key: "plan", label: isAr ? "الباقة" : "Plan", options: [["all", isAr ? "كل الباقات" : "All plans"], ["STARTER", "STARTER"], ["PRO", "PRO"], ["PRIME", "PRIME"]] },
+    { key: "payment_status", label: isAr ? "الدفع" : "Payment", options: [["all", isAr ? "كل حالات الدفع" : "All payments"], ["paid", isAr ? "دفع مؤكد" : "Confirmed payment"], ["unpaid", isAr ? "غير مدفوع" : "Unpaid"]] },
+    { key: "completion_status", label: isAr ? "إكمال الكورس" : "Course", options: [["all", isAr ? "كل مستويات التقدم" : "All progress"], ["completed", isAr ? "أكمل كل الدروس" : "Course completed"], ["not_completed", isAr ? "لم يكمل الكورس" : "Not completed"]] },
+    { key: "learning_status", label: isAr ? "حالة المسار" : "Track status", options: [["all", isAr ? "كل المسارات" : "All tracks"], ["not_started", isAr ? "لم يبدأ" : "Not started"], ["active", isAr ? "قيد التعلم" : "Active"], ["completed", isAr ? "أكمل المسار" : "Track completed"], ["finished", isAr ? "أنهى رحلة التعلم" : "Journey finished"], ["archived", isAr ? "مؤرشف" : "Archived"]] },
+    { key: "performance", label: isAr ? "مستوى الأداء" : "Performance level", options: [["all", isAr ? "كل المستويات" : "All levels"], ["high", isAr ? "مرتفع (80 فأكثر)" : "High (80+)"], ["average", isAr ? "مستقر (60–79)" : "On track (60–79)"], ["needs_support", isAr ? "يحتاج دعمًا (أقل من 60)" : "Needs support (<60)"]] },
+    { key: "sort", label: isAr ? "ترتيب الطلاب" : "Sort students", options: [["performance_desc", isAr ? "الأعلى أداءً" : "Highest overall performance"], ["progress_desc", isAr ? "الأعلى تقدمًا" : "Highest progress"], ["quiz_desc", isAr ? "أعلى متوسط كويز" : "Highest quiz average"], ["exam_desc", isAr ? "أعلى متوسط امتحانات" : "Highest exam average"], ["progress_asc", isAr ? "الأقل تقدمًا" : "Lowest progress"], ["name_asc", isAr ? "الاسم أ–ي" : "Name A–Z"]] },
+  ];
+
+  return (
+    <section className="zeus-glass p-5 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-heading font-bold text-base">{isAr ? "بحث وتصدير المستخدمين" : "Find & export users"}</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{isAr ? "ابحث بالاسم أو البريد أو الهاتف، ثم رشّح حسب الحساب والاشتراك والتقدم والأداء ودرجات الاختبارات." : "Search by name, email or phone, then filter by account, subscription, progress, performance and assessment scores."}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={exportUsers} disabled={exporting}
+            className="inline-flex items-center gap-2 rounded-xl border border-border/60 px-4 py-2.5 text-xs font-bold disabled:opacity-50">
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {isAr ? "تنزيل النتائج المفلترة" : "Export filtered users"}
+          </button>
+          <button type="button" onClick={exportCompletedUsers} disabled={exporting}
+            className="inline-flex items-center gap-2 rounded-xl bg-zeus-gold px-4 py-2.5 text-xs font-bold text-zeus-midnight disabled:opacity-50">
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {isAr ? "تصدير المستخدمين المكتملين" : "Export Completed Users"}
+          </button>
+        </div>
+      </div>
+      <form onSubmit={(event) => { event.preventDefault(); load(); }} className="space-y-3">
+        <div className="relative">
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input value={search} onChange={(event) => { setSearch(event.target.value); setUsers([]); setTotal(0); setExpanded(null); }}
+            placeholder={isAr ? "بحث بالاسم أو البريد الإلكتروني أو الهاتف..." : "Search name, email or phone..."}
+            className="w-full rounded-xl border border-border/60 bg-card py-2.5 ps-10 pe-4 text-sm outline-none focus:zeus-gold-border" />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {fields.map((field) => (
+            <label key={field.key} className="grid gap-1 text-[11px] text-muted-foreground">
+              <span>{field.label}</span>
+              <select value={filters[field.key]} onChange={(event) => updateFilter(field.key, event.target.value)} className={selectClass}>
+                {field.options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">{isAr ? `المعروض ${users.length} من ${total}` : `Showing ${users.length} of ${total}`}</p>
+          <button type="submit" disabled={loading} className="rounded-xl border border-border/60 bg-secondary/40 px-4 py-2 text-xs font-semibold disabled:opacity-50">
+            {loading ? (isAr ? "جارٍ البحث..." : "Searching...") : (isAr ? "تطبيق الفلاتر" : "Apply filters")}
+          </button>
+        </div>
+      </form>
+      {error && <p role="alert" className="text-sm text-rose-400">{error}</p>}
+      <p className="text-[11px] text-muted-foreground">{isAr ? "ملف Excel يحتوي بيانات التواصل والحساب والاشتراك والتقدم فقط، ولا يحتوي كلمات مرور." : "The Excel file contains contact, account, subscription and progress data only; it never includes passwords."}</p>
+      <div className="divide-y divide-border/40 rounded-xl border border-border/50">
+        {users.map((user) => {
+          const complete = user.lessons_total > 0 && user.lessons_done === user.lessons_total;
+          const expandedRow = expanded === user.id;
+          return (
+            <button type="button" key={user.id} onClick={() => setExpanded(expandedRow ? null : user.id)}
+              className="block w-full p-3 text-start hover:bg-secondary/20">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="font-semibold">{user.full_name || user.email}</span>
+                <span className="text-xs text-zeus-brightgold">{user.subscription_plan || (isAr ? "بدون باقة" : "No plan")}</span>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                <span>{user.email}</span>
+                <span dir="ltr">{user.phone_e164 || (isAr ? "لا يوجد هاتف" : "No phone")}</span>
+                <span>{user.status === "active" ? (isAr ? "الحساب مفعّل" : "Account active") : user.status === "pending" ? (isAr ? "بانتظار التفعيل" : "Pending activation") : (isAr ? "موقوف" : "Suspended")}</span>
+                <span>{user.lessons_done}/{user.lessons_total} {isAr ? "درس" : "lessons"} · {complete ? (isAr ? "مكتمل" : "Completed") : (isAr ? "غير مكتمل" : "Not completed")}</span>
+                <span>{isAr ? "الأداء" : "Performance"}: {user.performance_score}%</span>
+                <span>{isAr ? "الكويزات" : "Quizzes"}: {user.average_quiz_score}%</span>
+                <span>{isAr ? "الامتحانات" : "Exams"}: {user.average_exam_score}%</span>
+                {user.latest_track && <span>{user.latest_track} · {user.learning_status}</span>}
+              </div>
+              {expandedRow && (
+                <div className="mt-3 grid gap-2 border-t border-border/40 pt-3 text-xs sm:grid-cols-2">
+                  <span>{isAr ? "الدولة:" : "Country:"} {user.phone_country || "—"}</span>
+                  <span>{isAr ? "الدفع:" : "Payment:"} {user.payment_status}</span>
+                  <span>{isAr ? "الاشتراك:" : "Subscription:"} {user.effective_subscription_status}</span>
+                  <span>{isAr ? "الهدف:" : "Goal:"} {user.goal || "—"}</span>
+                  <span>{isAr ? "تصنيف الأداء:" : "Performance band:"} {user.performance_band}</span>
+                  <span>{isAr ? "تاريخ التسجيل:" : "Registered:"} {(user.created_date || "").slice(0, 10) || "—"}</span>
+                  <span>{isAr ? "ينتهي الاشتراك:" : "Subscription expires:"} {(user.subscription_expires || "").slice(0, 10) || "—"}</span>
+                </div>
+              )}
+            </button>
+          );
+        })}
+        {!loading && users.length === 0 && <p className="p-5 text-center text-xs text-muted-foreground">{isAr ? "لا يوجد مستخدمون مطابقون للفلاتر." : "No users match these filters."}</p>}
+      </div>
+      {users.length < total && (
+        <button type="button" onClick={() => load(true)} disabled={loading}
+          className="mx-auto flex items-center gap-2 rounded-full border border-border/60 px-5 py-2.5 text-xs font-semibold disabled:opacity-50">
+          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {isAr ? "تحميل المزيد" : "Load more"}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -104,36 +329,100 @@ function UsersTab({ isAr }) {
   const [users, setUsers] = useState([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
+  const [loadedSearch, setLoadedSearch] = useState("");
+  const [accountType, setAccountType] = useState("all");
+  const [loadedAccountType, setLoadedAccountType] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [communities, setCommunities] = useState([]);
   const [planModalUser, setPlanModalUser] = useState(null);
+  const [planPrices, setPlanPrices] = useState(null);
   const [selectedPlan, setSelectedPlan] = useState("STARTER");
+  const [subscriptionStart, setSubscriptionStart] = useState("");
+  const [subscriptionExpires, setSubscriptionExpires] = useState("");
   const [savingPlan, setSavingPlan] = useState(false);
+  const [passwordResetUser, setPasswordResetUser] = useState(null);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [savingUser, setSavingUser] = useState(false);
+  const [newUser, setNewUser] = useState({ full_name: "", email: "", phone_number: "", password: "", subscription_plan: "" });
+  const [error, setError] = useState("");
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (append = false) => {
+    setLoadingMore(append);
+    if (!append) setLoading(true);
+    setError("");
     try {
-      const r = await api.admin.get(`/users?search=${encodeURIComponent(search)}&limit=100`);
-      setUsers(r.users || []);
+      const query = append ? loadedSearch : search;
+      const queryAccountType = append ? loadedAccountType : accountType;
+      const offset = append ? users.length : 0;
+      const r = await api.admin.get(`/users?search=${encodeURIComponent(query)}&account_type=${encodeURIComponent(queryAccountType)}&limit=100&offset=${offset}`);
+      setLoadedSearch(query);
+      setLoadedAccountType(queryAccountType);
+      setUsers((current) => append ? [...current, ...(r.users || [])] : (r.users || []));
       setTotal(r.total || 0);
       const cl = await api.admin.get("/communities");
       setCommunities(cl || []);
-    } catch {}
-    setLoading(false);
+    } catch (loadError) {
+      setError(loadError.message || (isAr ? "تعذر تحميل المستخدمين." : "Could not load users."));
+    } finally {
+      setLoadingMore(false);
+      if (!append) setLoading(false);
+    }
   };
   useEffect(() => { load(); }, []);
 
-  const act = async (fn) => { await fn(); load(); };
+  const act = async (fn) => {
+    setError("");
+    try {
+      await fn();
+      await load();
+    } catch (actionError) {
+      setError(actionError.message || (isAr ? "تعذر تنفيذ الإجراء." : "Could not complete the action."));
+    }
+  };
+
+  const openPlanModal = async (user) => {
+    setError("");
+    try {
+      const settings = await api.admin.get("/settings");
+      setPlanPrices({
+        STARTER: settings.starter_price,
+        PRO: settings.pro_price,
+        PRIME: settings.prime_price,
+        currency: settings.currency,
+      });
+    } catch (settingsError) {
+      setError(settingsError.message || (isAr ? "تعذر تحميل أسعار الباقات." : "Could not load plan prices."));
+      return;
+    }
+
+    const now = new Date();
+    const defaultExpiry = new Date(now);
+    defaultExpiry.setDate(defaultExpiry.getDate() + 30);
+    const toDateInput = (date) => {
+      const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+      return localDate.toISOString().slice(0, 10);
+    };
+    setPlanModalUser(user);
+    setSelectedPlan(user.subscription_plan || "STARTER");
+    setSubscriptionStart(user.subscription_start?.slice(0, 10) || toDateInput(now));
+    setSubscriptionExpires(user.subscription_expires?.slice(0, 10) || toDateInput(defaultExpiry));
+  };
 
   const assign = async (communityId, userId, isNew, newName) => {
-    let cid = communityId;
-    if (isNew) {
-      const created = await api.admin.post("/communities", { name: newName });
-      cid = created.id;
+    setError("");
+    try {
+      let cid = communityId;
+      if (isNew) {
+        const created = await api.admin.post("/communities", { name: newName });
+        cid = created.id;
+      }
+      await api.admin.post(`/communities/${cid}/members`, { user_id: userId });
+      await load();
+    } catch (actionError) {
+      setError(actionError.message || (isAr ? "تعذر إضافة المستخدم للمجتمع." : "Could not add user to the community."));
     }
-    await api.admin.post(`/communities/${cid}/members`, { user_id: userId });
-    load();
   };
 
   const handleActivateWithPlan = async (e) => {
@@ -144,28 +433,97 @@ function UsersTab({ isAr }) {
       await api.admin.put(`/users/${planModalUser.id}`, {
         status: "active",
         subscription_plan: selectedPlan,
+        subscription_start: subscriptionStart,
+        subscription_expires: subscriptionExpires,
       });
       setPlanModalUser(null);
       await load();
     } catch (err) {
-      alert(err.message || "Failed to update user plan");
+      alert(err.message || (isAr ? "تعذر تحديث باقة المستخدم." : "Failed to update user plan."));
     } finally {
       setSavingPlan(false);
     }
   };
 
-  if (loading) return <Spin />;
+  const handleCreateUser = async (event) => {
+    event.preventDefault();
+    setSavingUser(true);
+    setError("");
+    try {
+      await api.admin.post("/users", {
+        ...newUser,
+        subscription_plan: newUser.subscription_plan || null,
+      });
+      setNewUser({ full_name: "", email: "", phone_number: "", password: "", subscription_plan: "" });
+      setCreatingUser(false);
+      await load();
+    } catch (createError) {
+      setError(createError.message || (isAr ? "تعذر إنشاء الحساب." : "Could not create the account."));
+    } finally {
+      setSavingUser(false);
+    }
+  };
+
+  if (loading && users.length === 0) return <Spin />;
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      {error && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-400">{error}</p>}
+      {loading && <Spin />}
+      <div className="flex justify-end">
+        <button type="button" onClick={() => setCreatingUser((open) => !open)}
+          className="inline-flex items-center gap-2 rounded-xl bg-zeus-gold px-4 py-2.5 text-xs font-bold text-zeus-midnight">
+          <Plus className="h-4 w-4" /> {isAr ? "إنشاء حساب مستخدم" : "Create user account"}
+        </button>
+      </div>
+      {creatingUser && (
+        <form onSubmit={handleCreateUser} className="zeus-glass grid gap-3 p-4 sm:grid-cols-2">
+          <h3 className="font-heading font-bold sm:col-span-2">{isAr ? "بيانات الحساب والخطة" : "Account and plan details"}</h3>
+          <input required maxLength={160} value={newUser.full_name} onChange={(event) => setNewUser((current) => ({ ...current, full_name: event.target.value }))}
+            placeholder={isAr ? "الاسم بالكامل" : "Full name"} className="rounded-xl border border-border/60 bg-card px-3 py-2.5 text-sm" />
+          <input required type="email" maxLength={254} value={newUser.email} onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))}
+            placeholder={isAr ? "البريد الإلكتروني" : "Email"} className="rounded-xl border border-border/60 bg-card px-3 py-2.5 text-sm" />
+          <input type="tel" maxLength={32} value={newUser.phone_number} onChange={(event) => setNewUser((current) => ({ ...current, phone_number: event.target.value }))}
+            placeholder={isAr ? "رقم الهاتف (اختياري)" : "Phone number (optional)"} className="rounded-xl border border-border/60 bg-card px-3 py-2.5 text-sm" />
+          <input required type="password" minLength={8} maxLength={72} autoComplete="new-password" value={newUser.password} onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))}
+            placeholder={isAr ? "كلمة المرور (8 أحرف على الأقل)" : "Password (at least 8 characters)"} className="rounded-xl border border-border/60 bg-card px-3 py-2.5 text-sm" />
+          <select value={newUser.subscription_plan} onChange={(event) => setNewUser((current) => ({ ...current, subscription_plan: event.target.value }))}
+            className="rounded-xl border border-border/60 bg-card px-3 py-2.5 text-sm">
+            <option value="">{isAr ? "بدون باقة — الحساب ينتظر التفعيل" : "No plan — account remains pending"}</option>
+            <option value="STARTER">STARTER</option><option value="PRO">PRO</option><option value="PRIME">PRIME</option>
+          </select>
+          <button type="submit" disabled={savingUser} className="inline-flex items-center justify-center gap-2 rounded-xl bg-zeus-gold px-4 py-2.5 text-xs font-bold text-zeus-midnight disabled:opacity-50">
+            {savingUser ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            {isAr ? "إنشاء الحساب" : "Create account"}
+          </button>
+        </form>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <label className="sr-only" htmlFor="admin-account-type-filter">{isAr ? "تصفية حسب فئة الحساب" : "Filter by account type"}</label>
+        <select id="admin-account-type-filter" aria-label={isAr ? "تصفية حسب فئة الحساب" : "Filter by account type"}
+          value={accountType}
+          onChange={(event) => {
+            setAccountType(event.target.value);
+            setUsers([]);
+            setTotal(0);
+            setExpanded(null);
+          }}
+          className="rounded-xl border border-border/60 bg-card px-3 py-2.5 text-sm outline-none focus:zeus-gold-border">
+          <option value="all">{isAr ? "كل فئات الحسابات" : "All account types"}</option>
+          <option value="individual">{isAr ? "طلاب أفراد" : "Individual learners"}</option>
+          <option value="institution">{isAr ? "كل حسابات الجهات" : "All institution accounts"}</option>
+          <option value="partner_student">{isAr ? "طلاب الجهات" : "Institution students"}</option>
+          <option value="partner">{isAr ? "حسابات الجهات" : "Institution accounts"}</option>
+          <option value="doctor">{isAr ? "مدرسو الجهات" : "Institution instructors"}</option>
+          <option value="admin">{isAr ? "المسؤولون" : "Administrators"}</option>
+        </select>
         <div className="relative flex-1">
           <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()}
-            placeholder={isAr ? "بحث بالإيميل أو الاسم..." : "Search email or name..."}
+            placeholder={isAr ? "بحث بالاسم أو البريد أو الهاتف أو المسار..." : "Search name, email, phone, or track..."}
             className="w-full ps-10 pe-4 py-2.5 rounded-xl bg-card border border-border/60 text-sm outline-none focus:zeus-gold-border" />
         </div>
-        <button onClick={load} className="px-4 rounded-xl bg-secondary/40 border border-border/60 text-sm hover:border-zeus-gold/40 transition">{isAr ? "بحث" : "Search"}</button>
+        <button type="button" onClick={() => load()} className="px-4 rounded-xl bg-secondary/40 border border-border/60 text-sm hover:border-zeus-gold/40 transition">{isAr ? "بحث" : "Search"}</button>
       </div>
       <p className="text-xs text-muted-foreground">{isAr ? `عرض ${users.length} من ${total}` : `Showing ${users.length} of ${total}`}</p>
 
@@ -202,8 +560,7 @@ function UsersTab({ isAr }) {
                     <span
                       onClick={(e) => {
                         e.stopPropagation();
-                        setPlanModalUser(u);
-                        setSelectedPlan(u.subscription_plan || "STARTER");
+                        openPlanModal(u);
                       }}
                       title={isAr ? "تحديد أو تغيير باقة هذا المستخدم" : "Assign or change user plan"}
                       className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border cursor-pointer hover:opacity-80 transition ${planBadgeColor}`}
@@ -215,6 +572,7 @@ function UsersTab({ isAr }) {
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {u.email} · {isAr ? "انضم" : "joined"} {(u.created_date || "").slice(0, 10)}
+                    {u.phone_e164 && <span className="ms-2" dir="ltr">· {u.phone_e164}</span>}
                     {u.subscription_expires && (
                       <span className="text-zeus-brightgold ms-2">
                         · {isAr ? "ينتهي الاشتراك:" : "Expires:"} {u.subscription_expires.slice(0, 10)}
@@ -223,15 +581,20 @@ function UsersTab({ isAr }) {
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {(u.goal || (isAr ? "بدون هدف" : "no goal"))} · {u.lessons_done}/{u.lessons_total} ({pct}%)
-                    {(u.memberships || []).length > 0 && <span className="text-zeus-brightgold"> · {isAr ? "عضو في" : "in"}: {(u.memberships || []).map((m) => m.name).join("، ")}</span>}
-                  </div>
+                        {u.latest_track && <span> · {isAr ? "آخر مسار:" : "Latest track:"} {u.latest_track}</span>}
+                        <span className={u.learning_status === "finished" ? "text-emerald-400" : ""}> · {isAr ? "حالة التعلّم:" : "Learning:"} {u.learning_status || "not_started"}</span>
+                        {(u.memberships || []).length > 0 && <span className="text-zeus-brightgold"> · {isAr ? "عضو في" : "in"}: {(u.memberships || []).map((m) => m.name).join("، ")}</span>}
+                      </div>
                 </button>
                 <div className="flex items-center gap-1.5 flex-wrap">
+                  <Link to={`/admin/users/${encodeURIComponent(u.id)}/preview`}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-zeus-gold/40 px-3 py-2 text-xs font-semibold text-zeus-brightgold hover:bg-zeus-gold/10">
+                    <Eye className="h-3.5 w-3.5" />{isAr ? "معاينة الحساب" : "Preview account"}
+                  </Link>
                   {status !== "active" ? (
                     <button
                       onClick={() => {
-                        setPlanModalUser(u);
-                        setSelectedPlan(u.subscription_plan || "STARTER");
+                        openPlanModal(u);
                       }}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-400 transition shadow-sm"
                     >
@@ -250,7 +613,7 @@ function UsersTab({ isAr }) {
                   </button>
                   <button title={isAr ? "ترقية/تخفيض أدمن" : "Toggle admin"} onClick={() => act(() => api.admin.put(`/users/${u.id}`, { role: u.role === "admin" ? "user" : "admin" }))}
                     className="p-2 rounded-lg bg-secondary/40 border border-border/60 hover:border-zeus-gold/40 transition"><Crown style={{ width: 14, height: 14 }} className={u.role === "admin" ? "text-zeus-gold" : "text-muted-foreground"} /></button>
-                  <button title={isAr ? "باسورد جديد" : "New password"} onClick={() => { const p = window.prompt(isAr ? "باسورد جديد (6+ حروف):" : "New password (6+ chars):"); if (p) act(() => api.admin.put(`/users/${u.id}`, { password: p })); }}
+                  <button title={isAr ? "إعادة تعيين كلمة المرور" : "Reset password"} onClick={() => setPasswordResetUser(u)}
                     className="p-2 rounded-lg bg-secondary/40 border border-border/60 hover:border-zeus-gold/40 transition"><KeyRound style={{ width: 14, height: 14 }} className="text-muted-foreground" /></button>
                 </div>
               </div>
@@ -259,6 +622,13 @@ function UsersTab({ isAr }) {
           );
         })}
       </div>
+      {users.length < total && (
+        <button type="button" onClick={() => load(true)} disabled={loading || loadingMore}
+          className="mx-auto flex items-center gap-2 rounded-full border border-border/60 px-5 py-2.5 text-xs font-semibold hover:border-zeus-gold/60 disabled:opacity-50">
+          {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {loadingMore ? (isAr ? "جارٍ التحميل..." : "Loading...") : (isAr ? "تحميل المزيد من المستخدمين" : "Load more users")}
+        </button>
+      )}
 
       {/* Plan Specification & Account Activation Modal */}
       {planModalUser && (
@@ -289,9 +659,9 @@ function UsersTab({ isAr }) {
 
             <div className="space-y-2">
               {[
-                { id: "STARTER", name: "STARTER", descAr: "خريطة مخصصة + مساعد ذكي (99 EGP)", descEn: "Personalized Roadmap + AI (99 EGP)", cls: "border-amber-500/40 text-amber-400" },
-                { id: "PRO", name: "PRO", descAr: "كافة مميزات ستارتر + كويزات ومشاريع بعد كل مرحلة (199 EGP)", descEn: "Quizzes + Projects after stages (199 EGP)", cls: "border-cyan-500/40 text-cyan-400" },
-                { id: "PRIME", name: "PRIME", descAr: "شامل كل شيء + وظائف ومجتمعات وCV وبورتفوليو (399 EGP)", descEn: "All features + Jobs + CV + Community (399 EGP)", cls: "border-purple-500/40 text-purple-400" },
+                { id: "STARTER", name: "STARTER", priceKey: "STARTER", descAr: "خريطة مخصصة + مساعد ذكي", descEn: "Personalized Roadmap + AI", cls: "border-amber-500/40 text-amber-400" },
+                { id: "PRO", name: "PRO", priceKey: "PRO", descAr: "كافة مميزات ستارتر + كويزات ومشاريع بعد كل مرحلة", descEn: "Quizzes + Projects after stages", cls: "border-cyan-500/40 text-cyan-400" },
+                { id: "PRIME", name: "PRIME", priceKey: "PRIME", descAr: "شامل كل شيء + وظائف ومجتمعات وCV وبورتفوليو", descEn: "All features + Jobs + CV + Community", cls: "border-purple-500/40 text-purple-400" },
               ].map((p) => {
                 const checked = selectedPlan === p.id;
                 return (
@@ -318,11 +688,37 @@ function UsersTab({ isAr }) {
                       </div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
                         {isAr ? p.descAr : p.descEn}
+                        {" · "}
+                        {planPrices[p.priceKey]} {planPrices.currency}
                       </div>
                     </div>
                   </label>
                 );
               })}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1 text-xs font-semibold">
+                <span>{isAr ? "تاريخ بداية الاشتراك" : "Subscription start date"}</span>
+                <input
+                  type="date"
+                  required
+                  value={subscriptionStart}
+                  onChange={(event) => setSubscriptionStart(event.target.value)}
+                  className="w-full rounded-xl border border-border/60 bg-card px-3 py-2.5 text-xs"
+                />
+              </label>
+              <label className="space-y-1 text-xs font-semibold">
+                <span>{isAr ? "تاريخ انتهاء الاشتراك" : "Subscription expiry date"}</span>
+                <input
+                  type="date"
+                  required
+                  min={subscriptionStart}
+                  value={subscriptionExpires}
+                  onChange={(event) => setSubscriptionExpires(event.target.value)}
+                  className="w-full rounded-xl border border-border/60 bg-card px-3 py-2.5 text-xs"
+                />
+              </label>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
@@ -345,6 +741,18 @@ function UsersTab({ isAr }) {
           </form>
         </div>
       )}
+      {passwordResetUser && (
+        <PasswordResetModal
+          user={passwordResetUser}
+          isAr={isAr}
+          onClose={() => setPasswordResetUser(null)}
+          onSave={async (password) => {
+            await api.admin.put(`/users/${passwordResetUser.id}`, { password });
+            await load();
+            setPasswordResetUser(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -352,6 +760,9 @@ function UsersTab({ isAr }) {
 function UserDetail({ u, isAr, communities, onAssign }) {
   const [pick, setPick] = useState("");
   const [newName, setNewName] = useState("");
+  const [learning, setLearning] = useState(null);
+  const [learningLoading, setLearningLoading] = useState(true);
+  const [learningError, setLearningError] = useState("");
   const dna = u.dna || {};
   const chips = [
     dna.goal && `${isAr ? "الهدف" : "Goal"}: ${dna.goal}`,
@@ -369,6 +780,26 @@ function UserDetail({ u, isAr, communities, onAssign }) {
     }
     setPick(""); setNewName("");
   };
+  useEffect(() => {
+    let active = true;
+    setLearningLoading(true);
+    setLearningError("");
+    api.admin.get(`/users/${encodeURIComponent(u.id)}/learning`)
+      .then((result) => { if (active) setLearning(result); })
+      .catch((error) => { if (active) setLearningError(error.message || (isAr ? "تعذر تحميل سجل التعلم." : "Couldn't load learning history.")); })
+      .finally(() => { if (active) setLearningLoading(false); });
+    return () => { active = false; };
+  }, [u.id, isAr]);
+
+  const retryLearning = () => {
+    setLearningLoading(true);
+    setLearningError("");
+    api.admin.get(`/users/${encodeURIComponent(u.id)}/learning`)
+      .then(setLearning)
+      .catch((error) => setLearningError(error.message || (isAr ? "تعذر تحميل سجل التعلم." : "Couldn't load learning history.")))
+      .finally(() => setLearningLoading(false));
+  };
+
   return (
     <div className="mt-3 pt-3 border-t border-border/40 space-y-3">
       {chips.length > 0 && (
@@ -404,6 +835,229 @@ function UserDetail({ u, isAr, communities, onAssign }) {
           {isAr ? "إضافة للمجتمع" : "Add"}
         </button>
       </div>
+      <section className="space-y-3 rounded-xl border border-border/50 bg-secondary/10 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-bold">{isAr ? "سجل التعلم والاختبارات" : "Learning and quiz history"}</h3>
+          {learning && <span className="text-[10px] text-muted-foreground">{learning.lessons?.length || 0} {isAr ? "درسًا" : "lessons"}</span>}
+        </div>
+        {learningLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{isAr ? "جارٍ تحميل السجل..." : "Loading learning history..."}</div>}
+        {learningError && (
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-rose-400">
+            <span role="alert">{learningError}</span>
+            <button type="button" onClick={retryLearning} className="rounded-lg border border-border/60 px-2.5 py-1.5">{isAr ? "إعادة المحاولة" : "Retry"}</button>
+          </div>
+        )}
+        {learning && (
+          <>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+              <span>{learning.user?.full_name || u.full_name || "—"}</span>
+              <span>{learning.user?.email || u.email}</span>
+              <span dir="ltr">{learning.user?.phone || u.phone_e164 || "—"}</span>
+              <Link to={`/admin/users/${encodeURIComponent(u.id)}/preview`} className="inline-flex items-center gap-1 text-zeus-brightgold underline">
+                <Eye className="h-3 w-3" />{isAr ? "معاينة حساب الطالب للقراءة فقط" : "Preview student account (read-only)"}
+              </Link>
+              {learning.user?.portfolio_url && (
+                <a href={new URL(learning.user.portfolio_url, window.location.origin).href} target="_blank" rel="noreferrer" className="text-zeus-brightgold underline">
+                  {isAr ? "فتح البورتفوليو" : "Open portfolio"}
+                </a>
+              )}
+              {learning.user?.cv_url && (
+                <a href={new URL(learning.user.cv_url, window.location.origin).href} target="_blank" rel="noreferrer" className="text-zeus-brightgold underline">
+                  {isAr ? "فتح السيرة المنشورة" : "Open shared CV"}
+                </a>
+              )}
+            </div>
+            {learning.cv && (
+              <div className="rounded-lg border border-border/40 bg-card/60 p-2.5 text-[10px]">
+                <p className="font-semibold">{learning.cv.title_role || (isAr ? "السيرة الذاتية" : "CV")}</p>
+                {learning.cv.summary && <p className="mt-1 text-muted-foreground">{learning.cv.summary}</p>}
+                {!!learning.cv.skills?.length && <p className="mt-1">{isAr ? "المهارات:" : "Skills:"} {learning.cv.skills.map((skill) => typeof skill === "string" ? skill : skill.name).filter(Boolean).join(", ")}</p>}
+                {!!learning.cv.projects?.length && <p className="mt-1">{isAr ? "مشاريع السيرة:" : "CV projects:"} {learning.cv.projects.length}</p>}
+              </div>
+            )}
+            {learning.profile && (
+              <div className="rounded-lg border border-border/40 bg-card/60 p-2.5 text-[10px]">
+                <p><span className="font-semibold">{isAr ? "المجال والوظيفة المستهدفة:" : "Goal and target role:"}</span> {learning.profile.current_role || learning.profile.career_intent || learning.profile.goal || "—"}</p>
+                <p className="mt-1"><span className="font-semibold">{isAr ? "المستوى:" : "Level:"}</span> {learning.profile.current_level || "—"}</p>
+                {!!learning.profile.strengths && <p className="mt-1"><span className="font-semibold">{isAr ? "نقاط القوة المصرّح بها:" : "Declared strengths:"}</span> {learning.profile.strengths}</p>}
+                {!!learning.profile.weaknesses && <p className="mt-1"><span className="font-semibold">{isAr ? "مجالات التحسين المصرّح بها:" : "Declared growth areas:"}</span> {learning.profile.weaknesses}</p>}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-1.5">
+              {(learning.tracks || []).map((track) => (
+                <span key={track.id} className="rounded-full border border-border/50 bg-card px-2.5 py-1 text-[10px]">
+                  {track.goal} · {track.status} · {track.lessons_completed || 0}/{track.lessons_total || 0}
+                  {track.capstone_exists ? ` · ${track.capstone_completed ? (isAr ? "مشروع التخرج مكتمل" : "Capstone complete") : (isAr ? "مشروع التخرج متبقٍ" : "Capstone pending")}` : ""}
+                </span>
+              ))}
+            </div>
+            {(learning.skill_graph || []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {(learning.skill_graph || []).map((skill) => (
+                  <span key={skill.skill} className="rounded-lg bg-zeus-gold/10 px-2 py-1 text-[10px] text-zeus-brightgold">
+                    {skill.skill}: {skill.level}%
+                  </span>
+                ))}
+              </div>
+            )}
+            {!!learning.skills_in_progress?.length && <p className="rounded-lg border border-border/40 bg-card/60 p-2.5 text-[10px]"><span className="font-semibold">{isAr ? "مهارات قيد التعلم:" : "Skills in progress:"}</span> {learning.skills_in_progress.join(", ")}</p>}
+            {!!learning.strength_topics?.length && (
+              <details className="rounded-lg border border-border/40 bg-card/60 p-2.5">
+                <summary className="cursor-pointer text-[10px] font-semibold text-emerald-400">{isAr ? "نقاط قوة مثبتة بالكويزات" : "Quiz-evidenced strengths"}</summary>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {learning.strength_topics.map((topic) => <span key={topic.topic} className="rounded-lg bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-300">{topic.topic} · {Math.round(topic.correct / topic.questions * 100)}%</span>)}
+                </div>
+              </details>
+            )}
+              {!!learning.weak_topics?.length && (
+                <details className="rounded-lg border border-border/40 bg-card/60 p-2.5">
+                  <summary className="cursor-pointer text-[10px] font-semibold text-amber-300">
+                    {isAr ? "موضوعات تكررت فيها الأخطاء" : "Topics with repeated quiz mistakes"}
+                  </summary>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {learning.weak_topics.map((topic) => (
+                      <span key={topic.topic} className="rounded-lg bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200">
+                        {topic.topic} · {topic.incorrect_answers}
+                      </span>
+                    ))}
+                  </div>
+                </details>
+              )}
+              {!!learning.tutor_chats?.length && (
+                <details className="rounded-lg border border-border/40 bg-card/60 p-2.5">
+                  <summary className="cursor-pointer text-[10px] font-semibold">
+                    {isAr ? `تفاعلات الشرح والمراجعة (${learning.tutor_chats.length})` : `Tutor and review interactions (${learning.tutor_chats.length})`}
+                  </summary>
+                  <div className="mt-2 max-h-72 space-y-2 overflow-y-auto pe-1">
+                    {learning.tutor_chats.map((chat, chatIndex) => (
+                      <article key={`${chat.type}-${chat.lesson_id || "review"}-${chatIndex}`} className="rounded-md bg-secondary/30 p-2">
+                        <p className="mb-1 text-[10px] font-semibold text-zeus-brightgold">
+                          {chat.lesson_title || (chat.type === "learning_review" ? (isAr ? "مدرس المراجعة" : "Review tutor") : (isAr ? "محادثة الدرس" : "Lesson chat"))}
+                        </p>
+                        {(chat.messages || []).map((message, messageIndex) => (
+                          <p key={messageIndex} className="mb-1 whitespace-pre-wrap text-[10px] text-muted-foreground">
+                            <span className="font-semibold">{message.role === "user" ? (isAr ? "الطالب: " : "Student: ") : (isAr ? "المعلم: " : "Tutor: ")}</span>
+                            {message.content}
+                          </p>
+                        ))}
+                      </article>
+                    ))}
+                  </div>
+                </details>
+              )}
+              <div className="max-h-72 space-y-2 overflow-y-auto pe-1">
+              {(learning.lessons || []).map((lesson) => {
+                const latestAttempt = lesson.quiz_history?.[lesson.quiz_history.length - 1];
+                return (
+                  <article key={lesson.id} className="rounded-lg border border-border/40 bg-card/60 p-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold">{lesson.title || lesson.node_id}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {isAr ? `مرحلة ${lesson.phase}` : `Phase ${lesson.phase}`} · {lesson.status}
+                        {lesson.quiz_score != null ? ` · ${lesson.quiz_score}%` : ""}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                      <span>{lesson.attempts} {isAr ? "محاولات" : "attempts"}</span>
+                      {lesson.project && <span>{lesson.capstone ? (isAr ? "مشروع التخرج" : "Capstone") : (isAr ? "مشروع مرحلة" : "Phase project")}</span>}
+                      {lesson.video_title && <span>{isAr ? "فيديو:" : "Video:"} {lesson.video_title}{lesson.video_verified ? " ✓" : ""}</span>}
+                      {lesson.video_duration > 0 && (
+                        <span>
+                          {isAr ? "المشاهدة الفعلية:" : "Actually watched:"} {Math.min(100, Math.round((lesson.video_watched_sec || 0) / lesson.video_duration * 100))}%
+                          {lesson.video_watched && ` · ${isAr ? "اكتمل" : "Complete"}`}
+                          {" · "}{isAr ? "المتبقي تقريبًا:" : "about"} {Math.ceil(Math.max(0, lesson.video_duration - (lesson.video_position_sec || 0)) / 60)} {isAr ? "دقيقة" : "min left"}
+                        </span>
+                      )}
+                    </div>
+                    {lesson.project_submission && (
+                      <div className="mt-2 space-y-1 rounded-md bg-secondary/30 p-2 text-[10px]">
+                        {lesson.project_submission.text && <p className="whitespace-pre-wrap">{lesson.project_submission.text}</p>}
+                        {lesson.project_submission.url && /^https?:\/\//i.test(lesson.project_submission.url) && (
+                          <a href={lesson.project_submission.url} target="_blank" rel="noreferrer" className="text-zeus-brightgold underline">
+                            {isAr ? "رابط المشروع" : "Project link"}
+                          </a>
+                        )}
+                        {lesson.project_submission.score != null && (
+                          <p>{isAr ? "نتيجة المراجعة:" : "Review score:"} {lesson.project_submission.score}% · {lesson.project_submission.approved ? (isAr ? "مقبول" : "Approved") : (isAr ? "يحتاج تحسينًا" : "Needs improvement")}</p>
+                        )}
+                      </div>
+                    )}
+                    {!!latestAttempt?.feedback?.length && (
+                      <details className="mt-2 text-[10px]">
+                        <summary className="cursor-pointer text-zeus-brightgold">{isAr ? `تفاصيل آخر محاولة (${latestAttempt.score}%)` : `Latest quiz attempt (${latestAttempt.score}%)`}</summary>
+                        <ul className="mt-2 space-y-1.5">
+                          {latestAttempt.feedback.map((item, index) => (
+                            <li key={`${lesson.id}-feedback-${index}`} className={item.correct ? "text-emerald-400" : "text-amber-300"}>
+                              {item.correct ? "✓ " : "• "}{item.question || (isAr ? `السؤال ${index + 1}` : `Question ${index + 1}`)}
+                              {item.student_answer && <span className="block ps-3 text-muted-foreground">{isAr ? "إجابة الطالب:" : "Student answer:"} {item.student_answer}</span>}
+                              {!item.correct && item.correct_answer && <span className="block ps-3 text-emerald-400">{isAr ? "الإجابة الصحيحة:" : "Correct answer:"} {item.correct_answer}</span>}
+                              {item.feedback && <span className="block ps-3 text-muted-foreground">{item.feedback}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function PasswordResetModal({ user, isAr, onClose, onSave }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (event) => {
+    event.preventDefault();
+    setError("");
+    if (password.length < 8 || password.length > 72) {
+      setError(isAr ? "كلمة المرور يجب أن تكون من 8 إلى 72 حرفًا." : "Password must be 8-72 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      setError(isAr ? "كلمتا المرور غير متطابقتين." : "Passwords do not match.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(password);
+    } catch (saveError) {
+      setError(saveError.message || (isAr ? "تعذر تغيير كلمة المرور." : "Could not reset the password."));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+      <form onSubmit={submit} className="w-full max-w-md space-y-4 rounded-2xl border border-border/80 bg-card p-5 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-heading font-bold">{isAr ? "إعادة تعيين كلمة المرور" : "Reset password"}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{user.email}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-secondary/60" aria-label={isAr ? "إغلاق" : "Close"}><X className="h-4 w-4" /></button>
+        </div>
+        <label className="block space-y-1 text-xs">
+          <span>{isAr ? "كلمة المرور الجديدة" : "New password"}</span>
+          <input type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={password}
+            onChange={(event) => setPassword(event.target.value)} className="w-full rounded-xl border border-border/60 bg-background px-3 py-2.5" />
+        </label>
+        <label className="block space-y-1 text-xs">
+          <span>{isAr ? "تأكيد كلمة المرور" : "Confirm password"}</span>
+          <input type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={confirm}
+            onChange={(event) => setConfirm(event.target.value)} className="w-full rounded-xl border border-border/60 bg-background px-3 py-2.5" />
+        </label>
+        {error && <p role="alert" className="text-sm text-rose-400">{error}</p>}
+        <button type="submit" disabled={saving} className="w-full rounded-xl bg-zeus-gold px-4 py-2.5 text-sm font-bold text-zeus-midnight disabled:opacity-50">
+          {saving ? (isAr ? "جارٍ الحفظ..." : "Saving...") : (isAr ? "حفظ كلمة المرور الجديدة" : "Save new password")}
+        </button>
+      </form>
     </div>
   );
 }
@@ -413,25 +1067,47 @@ function CommunitiesTab({ isAr }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [form, setForm] = useState({ name: "", goal: "", stage: "" });
   const load = async () => {
     setLoading(true);
-    try { setList(await api.admin.get("/communities")); } catch {}
-    setLoading(false);
+    setError("");
+    try {
+      setList(await api.admin.get("/communities"));
+    } catch (loadError) {
+      setError(loadError.message || (isAr ? "تعذر تحميل المجتمعات." : "Could not load communities."));
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { load(); }, []);
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    if (editing) await api.admin.put(`/communities/${editing}`, form);
-    else await api.admin.post("/communities", form);
-    setForm({ name: "", goal: "", stage: "" });
-    setEditing(null);
-    load();
+    setSaving(true);
+    setError("");
+    try {
+      if (editing) await api.admin.put(`/communities/${editing}`, form);
+      else await api.admin.post("/communities", form);
+      setForm({ name: "", goal: "", stage: "" });
+      setEditing(null);
+      await load();
+    } catch (saveError) {
+      setError(saveError.message || (isAr ? "تعذر حفظ المجتمع." : "Could not save community."));
+    } finally {
+      setSaving(false);
+    }
   };
-  if (loading) return <Spin />;
+  if (loading && list.length === 0) return <Spin />;
   return (
     <div className="space-y-4">
+      <div>
+        <h2 className="font-heading text-xl font-bold">{isAr ? "المجتمعات والإشراف" : "Communities & moderation"}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{isAr ? "إدارة المجتمعات ومتابعة الرسائل والأعضاء من مكان واحد." : "Manage communities, messages, and members in one place."}</p>
+      </div>
+      {error && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-400">{error}</p>}
+      {loading && <Spin />}
       <form onSubmit={submit} className="zeus-glass p-4">
         <h3 className="font-heading font-bold text-sm mb-3 flex items-center gap-1.5">
           {editing ? <Pencil style={{ width: 14, height: 14 }} className="text-zeus-gold" /> : <Plus style={{ width: 14, height: 14 }} className="text-zeus-gold" />}
@@ -446,8 +1122,8 @@ function CommunitiesTab({ isAr }) {
             className="px-3.5 py-2.5 rounded-xl bg-card border border-border/60 text-sm outline-none focus:zeus-gold-border" />
         </div>
         <div className="flex gap-2">
-          <button type="submit" className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-zeus-gold text-zeus-midnight text-sm font-semibold hover:bg-zeus-brightgold transition">
-            <Check style={{ width: 14, height: 14 }} /> {editing ? (isAr ? "حفظ" : "Save") : (isAr ? "إنشاء" : "Create")}
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-zeus-gold text-zeus-midnight text-sm font-semibold hover:bg-zeus-brightgold transition disabled:opacity-50">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check style={{ width: 14, height: 14 }} />} {editing ? (isAr ? "حفظ" : "Save") : (isAr ? "إنشاء" : "Create")}
           </button>
           {editing && <button type="button" onClick={() => { setEditing(null); setForm({ name: "", goal: "", stage: "" }); }} className="px-4 rounded-full border border-border/60 text-sm text-muted-foreground"><X style={{ width: 14, height: 14 }} /></button>}
         </div>
@@ -464,16 +1140,102 @@ function CommunitiesTab({ isAr }) {
 
 function CommunityCard({ c, isAr, onEdit, onChanged }) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messageText, setMessageText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [messageError, setMessageError] = useState("");
+  const loadMessages = async () => {
+    setMessagesLoading(true);
+    setMessageError("");
+    try {
+      setMessages(await api.admin.get(`/communities/${c.id}/messages`));
+    } catch (loadError) {
+      setMessageError(loadError.message || (isAr ? "تعذر تحميل رسائل المجتمع." : "Could not load community messages."));
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setMessagesLoading(true);
+    setMessageError("");
+    api.admin.get(`/communities/${c.id}/messages`).then((loadedMessages) => {
+      if (active) setMessages(loadedMessages);
+    }).catch((loadError) => {
+      if (active) setMessageError(loadError.message || (isAr ? "تعذر تحميل رسائل المجتمع." : "Could not load community messages."));
+    }).finally(() => {
+      if (active) setMessagesLoading(false);
+    });
+    return () => { active = false; };
+  }, [open, c.id]);
+  const runAction = async (action) => {
+    setError("");
+    try {
+      await action();
+      await onChanged();
+    } catch (actionError) {
+      setError(actionError.message || (isAr ? "تعذر تنفيذ الإجراء." : "Could not complete the action."));
+    }
+  };
+  const sendAdminMessage = async (event) => {
+    event.preventDefault();
+    const text = messageText.trim();
+    if (!text || sending) return;
+    setSending(true);
+    setMessageError("");
+    try {
+      await api.admin.post(`/communities/${c.id}/messages`, { text });
+      setMessageText("");
+      await loadMessages();
+      await onChanged();
+    } catch (sendError) {
+      setMessageError(sendError.message || (isAr ? "تعذر إرسال الرسالة." : "Could not send message."));
+    } finally {
+      setSending(false);
+    }
+  };
+  const togglePinned = async (message) => {
+    try {
+      await api.admin.post(`/messages/${message.id}/pin`, { is_pinned: !message.is_pinned });
+      await loadMessages();
+    } catch (pinError) {
+      setMessageError(pinError.message || (isAr ? "تعذر تثبيت الرسالة." : "Could not pin message."));
+    }
+  };
+  const deleteMessage = async (messageId) => {
+    if (!window.confirm(isAr ? "تحذف الرسالة دي؟" : "Delete this message?")) return;
+    try {
+      await api.admin.del(`/messages/${messageId}`);
+      await loadMessages();
+      await onChanged();
+    } catch (deleteError) {
+      setMessageError(deleteError.message || (isAr ? "تعذر حذف الرسالة." : "Could not delete message."));
+    }
+  };
   return (
     <div className="zeus-glass p-4">
+      {error && <p role="alert" className="mb-3 text-xs text-rose-400">{error}</p>}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <button onClick={() => setOpen(!open)} className="text-start flex-1 min-w-0">
           <div className="font-medium text-sm">{c.name}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">{c.goal || "—"} · {c.stage || "—"} · {c.member_count || 0} {isAr ? "عضو" : "members"} · {c.messages || 0} {isAr ? "رسالة" : "msgs"}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">{c.goal || "—"} · {c.stage || "—"} · {c.member_count || 0} {isAr ? "عضو" : "members"} · {c.messages || 0} {isAr ? "رسالة" : "msgs"} · {c.is_closed ? (isAr ? "مغلق" : "Closed") : (isAr ? "مفتوح" : "Open")}</div>
         </button>
         <div className="flex gap-1.5">
+          <button type="button" aria-label={c.is_closed ? (isAr ? "فتح المجتمع" : "Reopen community") : (isAr ? "إغلاق المجتمع" : "Close community")}
+            title={c.is_closed ? (isAr ? "فتح المجتمع" : "Reopen community") : (isAr ? "إغلاق المجتمع" : "Close community")}
+            onClick={() => {
+              const closing = !c.is_closed;
+              if (closing && !window.confirm(isAr ? "إغلاق المجتمع؟ الأعضاء هيقدروا يقرأوا الرسائل لكن مش هيقدروا يبعتوا." : "Close this community? Members will still be able to read, but cannot post.")) return;
+              runAction(() => api.admin.put(`/communities/${c.id}`, { is_closed: closing }));
+            }}
+            className="p-2 rounded-lg bg-secondary/40 border border-border/60 hover:border-amber-500/40 transition">
+            {c.is_closed ? <Unlock style={{ width: 14, height: 14 }} className="text-amber-400" /> : <Lock style={{ width: 14, height: 14 }} className="text-amber-400" />}
+          </button>
           <button onClick={onEdit} className="p-2 rounded-lg bg-secondary/40 border border-border/60 hover:border-zeus-gold/40 transition"><Pencil style={{ width: 14, height: 14 }} className="text-muted-foreground" /></button>
-          <button onClick={async () => { if (window.confirm(isAr ? "حذف المجتمع ورسائله؟" : "Delete community + messages?")) { await api.admin.del(`/communities/${c.id}`); onChanged(); } }} className="p-2 rounded-lg bg-secondary/40 border border-border/60 hover:border-red-500/50 transition"><Trash2 style={{ width: 14, height: 14 }} className="text-red-400" /></button>
+          <button onClick={() => { if (window.confirm(isAr ? "حذف المجتمع ورسائله؟" : "Delete community + messages?")) runAction(() => api.admin.del(`/communities/${c.id}`)); }} className="p-2 rounded-lg bg-secondary/40 border border-border/60 hover:border-red-500/50 transition"><Trash2 style={{ width: 14, height: 14 }} className="text-red-400" /></button>
         </div>
       </div>
       {open && (
@@ -484,8 +1246,12 @@ function CommunityCard({ c, isAr, onEdit, onChanged }) {
               <div className="space-y-1">
                 {(c.member_users || []).map((m) => (
                   <div key={m.id} className="flex items-center justify-between text-xs bg-secondary/30 rounded-lg px-3 py-2">
-                    <span className="truncate">{m.full_name || m.email}</span>
-                    <button onClick={async () => { await api.admin.del(`/communities/${c.id}/members/${m.id}`); onChanged(); }}
+                    <span className="min-w-0 truncate font-semibold" dir="ltr">{m.email}</span>
+                    <button onClick={() => {
+                      if (window.confirm(isAr ? `تشيل ${m.email} من المجتمع؟` : `Remove ${m.email} from this community?`)) {
+                        runAction(() => api.admin.del(`/communities/${c.id}/members/${m.id}`));
+                      }
+                    }}
                       className="text-red-400 hover:underline shrink-0 ms-2">{isAr ? "إزالة" : "Remove"}</button>
                   </div>
                 ))}
@@ -499,7 +1265,7 @@ function CommunityCard({ c, isAr, onEdit, onChanged }) {
                 {(c.suggested_members || []).map((m) => (
                   <div key={m.id} className="flex items-center justify-between gap-2 text-xs bg-zeus-gold/5 border border-zeus-gold/20 rounded-lg px-3 py-2">
                     <span className="truncate">{m.full_name || m.email} <span className="text-muted-foreground">· {m.reason}</span></span>
-                    <button onClick={async () => { await api.admin.post(`/communities/${c.id}/members`, { user_id: m.id }); onChanged(); }}
+                    <button onClick={() => runAction(() => api.admin.post(`/communities/${c.id}/members`, { user_id: m.id }))}
                       className="px-3 py-1.5 rounded-full bg-zeus-gold text-zeus-midnight font-bold shrink-0 hover:bg-zeus-brightgold transition">
                       {isAr ? "أضف" : "Add"}
                     </button>
@@ -511,36 +1277,66 @@ function CommunityCard({ c, isAr, onEdit, onChanged }) {
           {(c.member_users || []).length === 0 && (c.suggested_members || []).length === 0 && (
             <p className="text-xs text-muted-foreground">{isAr ? "لا أعضاء ولا مقترحون بعد." : "No members or suggestions yet."}</p>
           )}
+          <section className="border-t border-border/40 pt-3 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-sm font-bold">{isAr ? "رسائل المجتمع" : "Community messages"}</h4>
+              <button type="button" onClick={loadMessages} disabled={messagesLoading}
+                className="inline-flex items-center gap-1 rounded-full border border-border/60 px-3 py-1.5 text-xs hover:border-zeus-gold/50 disabled:opacity-50">
+                <RefreshCw style={{ width: 12, height: 12 }} className={messagesLoading ? "animate-spin" : ""} />
+                {isAr ? "تحديث" : "Refresh"}
+              </button>
+            </div>
+            {messageError && <p role="alert" className="text-xs text-rose-400">{messageError}</p>}
+            <form onSubmit={sendAdminMessage} className="flex gap-2">
+              <textarea value={messageText} onChange={(event) => setMessageText(event.target.value)} rows={2}
+                placeholder={isAr ? "اكتب رسالة باسم الأدمن..." : "Write a message as admin..."}
+                className="min-w-0 flex-1 resize-y rounded-xl border border-border/60 bg-card px-3 py-2 text-sm outline-none focus:zeus-gold-border" />
+              <button type="submit" disabled={sending || !messageText.trim()}
+                className="inline-flex items-center gap-1 self-end rounded-full bg-zeus-gold px-4 py-2 text-sm font-bold text-zeus-midnight disabled:opacity-50">
+                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send style={{ width: 14, height: 14 }} />}
+                {isAr ? "إرسال" : "Send"}
+              </button>
+            </form>
+            {messagesLoading && messages.length === 0 ? <Spin /> : (
+              <div className="max-h-[28rem] space-y-2 overflow-y-auto rounded-xl bg-[#efeae2] p-3 pe-1 dark:bg-[#0b141a]"
+                style={{ backgroundImage: "radial-gradient(circle, rgba(120, 120, 120, 0.10) 1px, transparent 1px)", backgroundSize: "22px 22px" }}>
+                {messages.map((message) => (
+                  <article key={message.id} className={`flex ${message.is_admin ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[92%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[82%] ${message.is_admin ? "bg-[#d9fdd3] text-[#111b21] dark:bg-[#005c4b] dark:text-[#e9edef]" : "bg-white text-[#111b21] dark:bg-[#202c33] dark:text-[#e9edef]"}`}>
+                      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="font-semibold text-[11px]" dir="ltr">{message.user_email}</span>
+                          {message.is_admin && <span className="ms-1.5 rounded-full bg-[#128c7e]/10 px-1.5 py-0.5 text-[9px] font-semibold text-[#075e54] dark:text-[#25d366]">{isAr ? "الأدمن" : "Admin"}</span>}
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                        <button type="button" onClick={() => togglePinned(message)}
+                          aria-label={message.is_pinned ? (isAr ? "إلغاء تثبيت الرسالة" : "Unpin message") : (isAr ? "تثبيت الرسالة" : "Pin message")}
+                          title={message.is_pinned ? (isAr ? "إلغاء التثبيت" : "Unpin") : (isAr ? "تثبيت" : "Pin")}
+                          className="rounded-md p-1 text-[#667781] hover:bg-black/5 hover:text-[#128c7e] dark:text-[#aebac1] dark:hover:bg-white/5 dark:hover:text-[#25d366]">
+                          <Pin style={{ width: 13, height: 13 }} />
+                        </button>
+                        <button type="button" onClick={() => deleteMessage(message.id)} aria-label={isAr ? "حذف الرسالة" : "Delete message"}
+                          className="rounded-md p-1 text-[#667781] hover:bg-red-500/10 hover:text-red-500 dark:text-[#aebac1]">
+                          <Trash2 style={{ width: 13, height: 13 }} />
+                        </button>
+                      </div>
+                    </div>
+                      {message.is_pinned && <p className="mb-1 text-[10px] font-semibold text-[#128c7e] dark:text-[#25d366]">{isAr ? "📌 رسالة مثبتة" : "📌 Pinned message"}</p>}
+                      <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{message.text}</p>
+                      <div className="mt-1 flex items-center justify-end gap-2">
+                        <time className="text-[10px] text-[#667781] dark:text-[#8696a0]">
+                          {message.created_date ? new Date(message.created_date).toLocaleTimeString(isAr ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" }) : ""}
+                        </time>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+                {!messagesLoading && messages.length === 0 && <p className="py-4 text-center text-xs text-muted-foreground">{isAr ? "لا توجد رسائل في المجتمع حتى الآن." : "No messages in this community yet."}</p>}
+              </div>
+            )}
+          </section>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ---------------- Moderation ---------------- */
-function ModerationTab({ isAr }) {
-  const [msgs, setMsgs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const load = async () => {
-    setLoading(true);
-    try { setMsgs(await api.admin.get("/messages?limit=100")); } catch {}
-    setLoading(false);
-  };
-  useEffect(() => { load(); }, []);
-  if (loading) return <Spin />;
-  return (
-    <div className="space-y-2">
-      {msgs.map((m) => (
-        <div key={m.id} className="zeus-glass p-4">
-          <div className="text-sm mb-1.5">{m.text}</div>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="text-[11px] text-muted-foreground">{m.user_email} · {m.community_name} · {(m.created_date || "").slice(0, 16).replace("T", " ")}</div>
-            <button onClick={async () => { if (window.confirm(isAr ? "حذف الرسالة؟" : "Delete message?")) { await api.admin.del(`/messages/${m.id}`); load(); } }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-red-500/40 text-red-400 text-xs hover:bg-red-500/10 transition"><Trash2 style={{ width: 12, height: 12 }} /> {isAr ? "حذف" : "Delete"}</button>
-          </div>
-        </div>
-      ))}
-      {msgs.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">{isAr ? "لا رسائل بعد." : "No messages yet."}</p>}
     </div>
   );
 }
@@ -572,6 +1368,9 @@ function BroadcastTab({ isAr }) {
       <h3 className="font-heading font-bold text-sm flex items-center gap-1.5"><Megaphone style={{ width: 15, height: 15 }} className="text-zeus-gold" />{isAr ? "إشعار للمستخدمين" : "Notify users"}</h3>
       <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder={isAr ? "إيميل أو اسم شخص معين (فاضي = الكل)" : "Specific email/name (empty = everyone)"} dir="ltr"
         className="w-full px-4 py-3 rounded-xl bg-card border border-zeus-gold/30 text-sm outline-none focus:zeus-gold-border" />
+      <p className="text-[11px] text-muted-foreground">
+        {isAr ? "لو الاسم متكرر، استخدم البريد الإلكتروني لتحديد الشخص بدقة." : "If a name matches multiple people, use the email address to target the right person."}
+      </p>
       <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={isAr ? "العنوان *" : "Title *"}
         className="w-full px-4 py-3 rounded-xl bg-card border border-border/60 text-sm outline-none focus:zeus-gold-border" />
       <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder={isAr ? "نص الإشعار *" : "Message *"}
@@ -592,6 +1391,17 @@ function Spin() {
   return <div className="flex justify-center py-16"><Loader2 className="text-zeus-gold animate-spin" style={{ width: 28, height: 28 }} /></div>;
 }
 
+function AdminLoadError({ message, isAr, onRetry }) {
+  return (
+    <div className="zeus-glass space-y-3 rounded-2xl border border-rose-500/30 p-6 text-center">
+      <p role="alert" className="text-sm text-rose-400">{message}</p>
+      <button type="button" onClick={onRetry} className="rounded-full bg-zeus-gold px-4 py-2 text-sm font-semibold text-zeus-midnight">
+        {isAr ? "إعادة المحاولة" : "Retry"}
+      </button>
+    </div>
+  );
+}
+
 /* ---------------- Subscribers & Payments ---------------- */
 function SubscribersTab({ isAr }) {
   const [list, setList] = useState([]);
@@ -600,43 +1410,90 @@ function SubscribersTab({ isAr }) {
   const [filter, setFilter] = useState("all");
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [actionId, setActionId] = useState(null);
+  const [passwordResetUser, setPasswordResetUser] = useState(null);
+  const [error, setError] = useState("");
 
   const load = async () => {
     setLoading(true);
+    setError("");
     try {
       const res = await api.admin.get("/subscribers");
       setList(res || []);
     } catch (err) {
-      console.error(err);
+      setError(err.message || (isAr ? "تعذر تحميل الاشتراكات." : "Could not load subscriptions."));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
   const handleApprove = async (id) => {
-    if (!window.confirm(isAr ? "هل أنت متأكد من تفعيل هذا الاشتراك لمدة 30 يوم؟" : "Approve and activate this subscription for 30 days?")) return;
+    if (!window.confirm(isAr ? "تفعيل الاشتراك أو تمديده لمدة 30 يومًا إضافية؟" : "Activate this subscription or extend it by 30 days?")) return;
     setActionId(id);
+    setError("");
     try {
       await api.admin.post(`/subscribers/${id}/approve`);
       await load();
     } catch (err) {
-      alert(err.message || "Failed to approve");
+      setError(err.message || (isAr ? "تعذر تفعيل الاشتراك." : "Failed to approve the subscription."));
+    } finally {
+      setActionId(null);
     }
-    setActionId(null);
   };
 
   const handleReject = async (id) => {
     const reason = window.prompt(isAr ? "سبب الرفض (اختياري):" : "Reason for rejection (optional):");
     if (reason === null) return;
     setActionId(id);
+    setError("");
     try {
       await api.admin.post(`/subscribers/${id}/reject`, { reason });
       await load();
     } catch (err) {
-      alert(err.message || "Failed to reject");
+      setError(err.message || (isAr ? "تعذر رفض طلب الاشتراك." : "Failed to reject the subscription request."));
+    } finally {
+      setActionId(null);
     }
-    setActionId(null);
+  };
+
+  const handleEditAccountEmail = async (item) => {
+    if (!item.user_id) {
+      setError(isAr ? "لا يوجد حساب مرتبط بهذا الطلب حتى الآن." : "This request is not linked to an account yet.");
+      return;
+    }
+    const email = window.prompt(isAr ? "أدخل البريد الإلكتروني الجديد للحساب:" : "Enter the new account email:", item.email);
+    if (email === null || !email.trim()) return;
+    setActionId(item.id);
+    setError("");
+    try {
+      await api.admin.put(`/users/${item.user_id}`, { email: email.trim() });
+      await load();
+    } catch (editError) {
+      setError(editError.message || (isAr ? "تعذر تعديل البريد الإلكتروني." : "Could not update the email."));
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const handleStopSubscription = async (item) => {
+    if (!item.user_id) return;
+    const confirmed = window.confirm(
+      isAr
+        ? `إيقاف اشتراك ${item.email} الآن؟ سيتم تسجيل خروجه ومنعه من الدخول حتى تجديد الاشتراك.`
+        : `Stop ${item.email}'s subscription now? They will be signed out and blocked until renewal.`,
+    );
+    if (!confirmed) return;
+    setActionId(item.id);
+    setError("");
+    try {
+      await api.admin.post(`/users/${item.user_id}/stop-subscription`);
+      await load();
+    } catch (stopError) {
+      setError(stopError.message || (isAr ? "تعذر إيقاف الاشتراك." : "Could not stop the subscription."));
+    } finally {
+      setActionId(null);
+    }
   };
 
   const filtered = list.filter((r) => {
@@ -652,15 +1509,19 @@ function SubscribersTab({ isAr }) {
   });
 
   const pendingCount = list.filter((r) => r.status === "pending").length;
-  const approvedCount = list.filter((r) => r.status === "approved" && !r.is_expired).length;
+  const approvedCount = list.filter((r) => r.status === "approved" && r.is_active).length;
   const totalRevenue = list
     .filter((r) => r.status === "approved")
     .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
 
   if (loading) return <Spin />;
+  if (error && list.length === 0) {
+    return <AdminLoadError message={error} isAr={isAr} onRetry={load} />;
+  }
 
   return (
     <div className="space-y-5">
+      {error && <p role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-400">{error}</p>}
       {/* Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="zeus-glass p-4">
@@ -755,6 +1616,18 @@ function SubscribersTab({ isAr }) {
                         <AlertCircle style={{ width: 11, height: 11 }} /> {isAr ? "منتهي الصلاحية" : "Expired"}
                       </span>
                     );
+                  } else if (item.is_scheduled) {
+                    statusBadge = (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                        <Clock style={{ width: 11, height: 11 }} /> {isAr ? "مجدول" : "Scheduled"}
+                      </span>
+                    );
+                  } else if (!item.is_active) {
+                    statusBadge = (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-secondary/60 text-muted-foreground border border-border/50">
+                        <AlertCircle style={{ width: 11, height: 11 }} /> {isAr ? "غير فعال" : "Inactive"}
+                      </span>
+                    );
                   } else {
                     statusBadge = (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
@@ -783,6 +1656,23 @@ function SubscribersTab({ isAr }) {
                     <td className="px-4 py-3.5">
                       <div className="font-semibold text-foreground text-sm">{item.user_name || "—"}</div>
                       <div className="text-muted-foreground text-xs">{item.email}</div>
+                      <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] ${
+                        item.user_account_status === "not_registered"
+                          ? "bg-secondary/60 text-muted-foreground"
+                          : item.user_account_status === "pending"
+                            ? "bg-orange-500/15 text-orange-400"
+                            : item.user_account_status === "suspended"
+                              ? "bg-red-500/15 text-red-400"
+                              : "bg-emerald-500/15 text-emerald-400"
+                      }`}>
+                        {item.user_account_status === "not_registered"
+                          ? (isAr ? "لا يوجد حساب" : "Not registered")
+                          : item.user_account_status === "pending"
+                            ? (isAr ? "الحساب بانتظار التفعيل" : "Account pending")
+                            : item.user_account_status === "suspended"
+                              ? (isAr ? "الحساب موقوف" : "Account suspended")
+                              : (isAr ? "حساب مسجل" : "Registered account")}
+                      </span>
                       {item.notes && (
                         <div className="mt-1 text-[11px] text-muted-foreground/80 bg-secondary/30 p-1.5 rounded-lg max-w-xs">
                           <span className="font-semibold">{isAr ? "ملاحظة: " : "Note: "}</span>
@@ -836,10 +1726,14 @@ function SubscribersTab({ isAr }) {
                           <div className="text-[11px] text-muted-foreground">
                             <div>{isAr ? "البداية: " : "Start: "}{item.start_date.slice(0, 10)}</div>
                             <div>{isAr ? "الانتهاء: " : "Expires: "}{item.expires_at ? item.expires_at.slice(0, 10) : "—"}</div>
-                            <div className={`font-semibold ${item.is_expired ? "text-rose-400" : "text-emerald-400"}`}>
+                            <div className={`font-semibold ${item.is_expired ? "text-rose-400" : item.is_active ? "text-emerald-400" : "text-muted-foreground"}`}>
                               {item.is_expired
                                 ? (isAr ? "منتهي" : "Expired")
-                                : (isAr ? `متبقي ${item.remaining_days} يوم` : `${item.remaining_days} days left`)}
+                                : item.is_scheduled
+                                  ? (isAr ? `يبدأ بعد ${item.starts_in_days} يوم` : `Starts in ${item.starts_in_days} days`)
+                                : item.is_active
+                                  ? (isAr ? `متبقي ${item.remaining_days} يوم` : `${item.remaining_days} days left`)
+                                  : (isAr ? "الحساب أو الباقة غير فعالين" : "Account or plan is inactive")}
                             </div>
                           </div>
                         )}
@@ -854,6 +1748,27 @@ function SubscribersTab({ isAr }) {
                     {/* Actions */}
                     <td className="px-4 py-3.5 text-end">
                       <div className="flex items-center justify-end gap-1.5">
+                        {item.user_id && (
+                          <>
+                            <button type="button" onClick={() => handleEditAccountEmail(item)} disabled={actionId === item.id}
+                              title={isAr ? "تعديل بريد الحساب" : "Edit account email"}
+                              className="rounded-lg border border-border/60 bg-secondary/40 p-2 text-muted-foreground hover:text-foreground disabled:opacity-50">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button type="button" onClick={() => setPasswordResetUser({ id: item.user_id, email: item.email })} disabled={actionId === item.id}
+                              title={isAr ? "إعادة تعيين كلمة المرور" : "Reset account password"}
+                              className="rounded-lg border border-border/60 bg-secondary/40 p-2 text-muted-foreground hover:text-foreground disabled:opacity-50">
+                              <KeyRound className="h-3.5 w-3.5" />
+                            </button>
+                            {item.is_active && (
+                              <button type="button" onClick={() => handleStopSubscription(item)} disabled={actionId === item.id}
+                                title={isAr ? "إيقاف الاشتراك وتسجيل خروج المستخدم" : "Stop subscription and sign the user out"}
+                                className="rounded-lg border border-red-500/40 bg-red-500/10 p-2 text-red-400 hover:bg-red-500/20 disabled:opacity-50">
+                                <XCircle className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
                         {isPending && (
                           <>
                             <button
@@ -943,6 +1858,18 @@ function SubscribersTab({ isAr }) {
             </div>
           </div>
         </div>
+      )}
+      {passwordResetUser && (
+        <PasswordResetModal
+          user={passwordResetUser}
+          isAr={isAr}
+          onClose={() => setPasswordResetUser(null)}
+          onSave={async (password) => {
+            await api.admin.put(`/users/${passwordResetUser.id}`, { password });
+            await load();
+            setPasswordResetUser(null);
+          }}
+        />
       )}
     </div>
   );
@@ -1046,13 +1973,15 @@ function SupportTab({ isAr }) {
 
 /* ---------------- Platform Settings (Pricing, AI Models, YouTube API, External Services) ---------------- */
 function SettingsTab({ isAr }) {
-  const secretFields = ["gemini_api_key", "openai_api_key", "youtube_api_key"];
+  const secretFields = ["groq_api_key", "gemini_api_key", "openai_api_key", "youtube_api_key"];
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
-  const [savedSecretHints, setSavedSecretHints] = useState({});
+  const [savedSecretHints, setSavedSecretHints] = useState(
+    Object.fromEntries(secretFields.map((field) => [field, ""]))
+  );
   const [aiStatus, setAiStatus] = useState(null);
   const [clearSecrets, setClearSecrets] = useState([]);
   const [testingProvider, setTestingProvider] = useState("");
@@ -1066,20 +1995,23 @@ function SettingsTab({ isAr }) {
     subscription_contact_email: "zeus.eduai@gmail.com",
     starter_description_ar: "خطة البداية الأساسية لرحلة التعلم المخصصة والذكية.",
     starter_description_en: "The essential plan for your personalized learning journey.",
-    starter_features_ar: "خريطة تعلم مخصصة بالكامل لخبرتك وأهدافك\nالمساعد الذكي ZEUS رفيقك الدراسي خطوة بخطوة",
-    starter_features_en: "Personalized learning roadmap\nAI Assistant",
+    starter_features_ar: "إنشاء خريطة تعلم مخصصة بالكامل لخبرتك وأهدافك\nعرض خارطة الطريق والجدول الدراسي\nالمساعد الذكي ZEUS",
+    starter_features_en: "Create a personalized learning roadmap\nView the roadmap and study schedule\nZEUS AI assistant",
     pro_description_ar: "الخطة الاحترافية للتطبيق العملي واختبار المعرفة خطوة بخطوة.",
     pro_description_en: "A professional plan for hands-on practice and learning assessments.",
-    pro_features_ar: "كل مميزات باقة STARTER\nاختبارات تفاعلية بعد كل درس لتقييم فهمك\nمشروع عملي وتطبيقي شامل بعد كل مرحلة",
-    pro_features_en: "Everything in STARTER\nInteractive quizzes after every lesson\nA project after every stage",
+    pro_features_ar: "كل مميزات باقة STARTER\nفتح الدروس ومحتواها وفيديوهاتها\nاختبار من 30 سؤالًا بعد كل درس، والنجاح من 80%\nمشروع عملي شامل بعد كل مرحلة ومتابعة التقدم",
+    pro_features_en: "Everything in STARTER\nUnlock lessons, learning content, and videos\n30-question quiz after each lesson; 80% required to pass\nA hands-on project after every stage and learning progress",
     prime_description_ar: "الخطة الشاملة للتأهيل والجاهزية لسوق العمل والتوظيف.",
     prime_description_en: "The complete plan for career preparation and job readiness.",
-    prime_features_ar: "كل مميزات باقة PRO\nبحث واقتراحات وظائف ذكية تطابق مجالك وخبرتك\nالانضمام لمجتمع المتخصصين والزملاء في مجالك\nأداة بناء وتحسين السيرة الذاتية الاحترافية (CV)\nأداة بناء وعرض البورتفوليو العام لمشاريعك",
-    prime_features_en: "Everything in PRO\nJob search/recommendations relevant to your field\nAccess to a community related to your field\nCV functionality\nPortfolio functionality",
+    prime_features_ar: "كل مميزات باقة PRO\nالملف الشخصي والشهادات\nبحث واقتراحات وظائف ذكية تطابق مجالك وخبرتك\nالانضمام لمجتمع المتخصصين والزملاء في مجالك\nأداة بناء وتحسين السيرة الذاتية الاحترافية (CV)\nأداة بناء وعرض البورتفوليو العام لمشاريعك",
+    prime_features_en: "Everything in PRO\nProfile and certificates\nJob search/recommendations relevant to your field\nAccess to a community related to your field\nCV builder\nPublic portfolio builder",
     gemini_api_key: "",
-    gemini_model: "gemini-2.5-flash",
+    gemini_model: "gemini-3.8-flash",
     openai_api_key: "",
     openai_model: "gpt-4o-mini",
+    groq_api_key: "",
+    groq_model: "openai/gpt-oss-20b",
+    ai_task_routes: {},
     youtube_api_key: "",
     facebook_url: "",
     linkedin_url: "",
@@ -1103,6 +2035,7 @@ function SettingsTab({ isAr }) {
           ...prev,
           ...data,
           ...Object.fromEntries(secretFields.map((field) => [field, ""])),
+          ai_task_routes: status.task_assignments || {},
           starter_price: data.starter_price ?? 99,
           pro_price: data.pro_price ?? 199,
           prime_price: data.prime_price ?? 399,
@@ -1150,8 +2083,9 @@ function SettingsTab({ isAr }) {
         };
         plansPayload[`${plan}_features`] = arabicFeatures.map((ar, index) => ({ ar, en: englishFeatures[index] }));
       }
+      const { ai_task_routes: _legacyAiRoutes, ...platformForm } = form;
       const saved = await api.admin.put("/settings", {
-        ...form,
+        ...platformForm,
         ...plansPayload,
         clear_secrets: clearSecrets,
       });
@@ -1175,22 +2109,45 @@ function SettingsTab({ isAr }) {
     setSaving(false);
   };
 
-  const testProvider = async (provider) => {
-    setTestingProvider(provider);
-    setTestResults((prev) => ({ ...prev, [provider]: null }));
+  const testProvider = async (provider, model, resultKey = provider) => {
+    setTestingProvider(resultKey);
+    setTestResults((prev) => ({ ...prev, [resultKey]: null }));
     try {
       const result = await api.admin.post("/settings/test-provider", {
         provider,
+        ...(model ? { model } : {}),
         language: isAr ? "ar" : "en",
       });
-      setTestResults((prev) => ({ ...prev, [provider]: result }));
+      setTestResults((prev) => ({ ...prev, [resultKey]: result }));
     } catch (err) {
       setTestResults((prev) => ({
         ...prev,
-        [provider]: { success: false, message: err.message || (isAr ? "فشل اختبار الاتصال" : "Provider test failed") },
+        [resultKey]: { success: false, message: err.message || (isAr ? "فشل اختبار الاتصال" : "Provider test failed") },
       }));
     } finally {
       setTestingProvider("");
+    }
+  };
+
+  const applySuggestedModel = (resultKey, model) => {
+    if (resultKey.startsWith("task:")) {
+      const task = resultKey.slice("task:".length);
+      setForm((prev) => ({
+        ...prev,
+        ai_task_routes: {
+          ...prev.ai_task_routes,
+          [task]: {
+            ...(prev.ai_task_routes?.[task] || aiStatus?.task_assignments?.[task] || {}),
+            model,
+          },
+        },
+      }));
+      return;
+    }
+
+    const provider = providerFields.find((item) => item.id === resultKey);
+    if (provider) {
+      setForm((prev) => ({ ...prev, [provider.model]: model }));
     }
   };
 
@@ -1201,8 +2158,9 @@ function SettingsTab({ isAr }) {
   };
 
   const providerFields = [
-    { id: "openai", title: "OpenAI", url: "https://platform.openai.com", key: "openai_api_key", model: "openai_model", placeholder: "sk-proj-...", modelPlaceholder: "gpt-4o-mini", assignment: isAr ? "الاكتشاف والتوصيات والتخطيط + بحث الوظائف" : "Discovery, recommendations, planning + job research" },
-    { id: "gemini", title: "Google Gemini", url: "https://aistudio.google.com", key: "gemini_api_key", model: "gemini_model", placeholder: "AIzaSy...", modelPlaceholder: "gemini-2.5-flash", assignment: isAr ? "بحث الوظائف والبديل للمهام الأخرى" : "Job research and fallback for other tasks" },
+    { id: "groq", title: "Groq", url: "https://console.groq.com", key: "groq_api_key", model: "groq_model", placeholder: "gsk_...", modelPlaceholder: "openai/gpt-oss-20b", assignment: isAr ? "لن يعمل إلا بعد تعيينه لمهمة" : "Inactive until assigned to a task" },
+    { id: "openai", title: "OpenAI", url: "https://platform.openai.com", key: "openai_api_key", model: "openai_model", placeholder: "sk-proj-...", modelPlaceholder: "gpt-4o-mini", assignment: isAr ? "عيّن المهام والموديلات من القائمة أدناه" : "Assign tasks and models below" },
+    { id: "gemini", title: "Google Gemini", url: "https://aistudio.google.com", key: "gemini_api_key", model: "gemini_model", placeholder: "AIzaSy...", modelPlaceholder: "gemini-3.8-flash", assignment: isAr ? "عيّن المهام والموديلات من القائمة أدناه" : "Assign tasks and models below" },
   ];
 
   if (loading) return <Spin />;
@@ -1236,42 +2194,42 @@ function SettingsTab({ isAr }) {
         <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">
-              STARTER (EGP/mo)
+              STARTER ({form.currency}/mo)
             </label>
             <input
               type="number"
               min="0"
               step="1"
               value={form.starter_price}
-              onChange={(e) => setForm({ ...form, starter_price: e.target.value })}
+              onChange={(e) => setForm({ ...form, starter_price: Number(e.target.value) })}
               className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border/60 text-sm font-bold text-foreground outline-none focus:zeus-gold-border"
               required
             />
           </div>
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">
-              PRO (EGP/mo)
+              PRO ({form.currency}/mo)
             </label>
             <input
               type="number"
               min="0"
               step="1"
               value={form.pro_price}
-              onChange={(e) => setForm({ ...form, pro_price: e.target.value })}
+              onChange={(e) => setForm({ ...form, pro_price: Number(e.target.value) })}
               className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border/60 text-sm font-bold text-foreground outline-none focus:zeus-gold-border"
               required
             />
           </div>
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">
-              PRIME (EGP/mo)
+              PRIME ({form.currency}/mo)
             </label>
             <input
               type="number"
               min="0"
               step="1"
               value={form.prime_price}
-              onChange={(e) => setForm({ ...form, prime_price: e.target.value })}
+              onChange={(e) => setForm({ ...form, prime_price: Number(e.target.value) })}
               className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border/60 text-sm font-bold text-foreground outline-none focus:zeus-gold-border"
               required
             />
@@ -1282,6 +2240,8 @@ function SettingsTab({ isAr }) {
             </label>
             <input
               type="text"
+              maxLength={3}
+              pattern="[A-Za-z]{3}"
               value={form.currency}
               onChange={(e) => setForm({ ...form, currency: e.target.value })}
               className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border/60 text-sm font-bold text-foreground outline-none focus:zeus-gold-border uppercase"
@@ -1323,8 +2283,16 @@ function SettingsTab({ isAr }) {
         ))}
       </div>
 
-      {/* AI Models Configuration */}
-      <div className="zeus-glass p-5 rounded-2xl border border-border/60 space-y-4">
+      <Link to="/admin/ai-settings" className="flex items-center justify-between gap-3 rounded-2xl border border-zeus-gold/30 bg-zeus-gold/5 p-4 transition hover:border-zeus-gold/60">
+        <span>
+          <span className="block text-sm font-bold">{isAr ? "إعدادات الذكاء الاصطناعي وYouTube" : "AI & YouTube settings"}</span>
+          <span className="mt-1 block text-xs text-muted-foreground">{isAr ? "افتح الصفحة المستقلة لإعداد المهام والمفاتيح والمراجع." : "Open the separate page to configure tasks, API keys, and reviewer."}</span>
+        </span>
+        <Sparkles className="h-5 w-5 shrink-0 text-zeus-gold" />
+      </Link>
+
+      {/* Legacy AI settings are retained for backward compatibility but configured on the dedicated page. */}
+      <div className="hidden">
         <div className="flex items-center gap-2 border-b border-border/40 pb-3">
           <Sparkles className="text-zeus-gold" style={{ width: 20, height: 20 }} />
           <div>
@@ -1372,7 +2340,7 @@ function SettingsTab({ isAr }) {
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button type="button" onClick={() => testProvider(provider.id)} disabled={testingProvider === provider.id || !configured} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/60 text-[11px] font-semibold hover:border-zeus-gold/60 disabled:opacity-50">
+                  <button type="button" onClick={() => testProvider(provider.id, form[provider.model])} disabled={testingProvider === provider.id || !configured} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border/60 text-[11px] font-semibold hover:border-zeus-gold/60 disabled:opacity-50">
                     {testingProvider === provider.id && <Loader2 className="w-3 h-3 animate-spin" />}
                     {isAr ? "اختبار الاتصال" : "Test connection"}
                   </button>
@@ -1385,9 +2353,20 @@ function SettingsTab({ isAr }) {
                     {result.success ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                     {result.message}
                   </span>}
+                  {result?.suggested_model && (
+                    <button
+                      type="button"
+                      onClick={() => applySuggestedModel(provider.id, result.suggested_model)}
+                      className="rounded-full border border-amber-500/40 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10"
+                    >
+                      {isAr ? `استخدم الموديل المقترح: ${result.suggested_model}` : `Use suggested model: ${result.suggested_model}`}
+                    </button>
+                  )}
                   {result?.available_models?.length > 0 && (
                     <div className="basis-full text-[11px] text-muted-foreground">
-                      {isAr ? "الموديلات المتاحة:" : "Available models:"}{" "}
+                      {isAr
+                        ? "قائمة Google للموديلات الداعمة للطلب (قد لا تكون كلها مفعّلة لهذا المفتاح):"
+                        : "Google's generation-capable model list (not all may be enabled for this key):"}{" "}
                       <span className="font-mono text-foreground/80">
                         {result.available_models.join(", ")}
                       </span>
@@ -1400,36 +2379,97 @@ function SettingsTab({ isAr }) {
         </div>
 
         <div className="pt-2 space-y-3">
-          <div className="text-xs font-bold">{isAr ? "توزيع المهام الحالي" : "Current task assignments"}</div>
-          <div className="grid sm:grid-cols-2 gap-2">
-            {Object.entries(aiStatus?.task_routes || {}).map(([task, providers]) => (
-              <div key={task} className="rounded-lg bg-secondary/20 border border-border/40 p-2.5 text-[11px]">
-                <span className="font-semibold capitalize">{task.replaceAll("_", " ")}</span>
-                <span className="text-muted-foreground"> — {providers.join(" → ")}</span>
-              </div>
-            ))}
+          <div className="text-xs font-bold">{isAr ? "اختيار المزوّد والموديل لكل مهمة" : "Choose a provider and model for each task"}</div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {Object.entries(aiStatus?.task_assignments || {}).map(([task, assignment]) => {
+              const route = form.ai_task_routes?.[task] || assignment;
+              return (
+                <div key={task} className="grid gap-2 rounded-xl border border-border/50 bg-secondary/20 p-3">
+                  <div className="text-xs font-semibold">{AI_TASK_LABELS[task]?.[isAr ? "ar" : "en"] || task}</div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-2">
+                    <select
+                      value={route.provider}
+                      onChange={(event) => {
+                        const provider = event.target.value;
+                        setForm((prev) => ({
+                          ...prev,
+                          ai_task_routes: {
+                            ...prev.ai_task_routes,
+                            [task]: { provider, model: aiStatus?.providers?.[provider]?.model || "" },
+                          },
+                        }));
+                      }}
+                      aria-label={`${AI_TASK_LABELS[task]?.en || task} provider`}
+                      className="min-w-0 rounded-lg border border-border/60 bg-card px-2.5 py-2 text-xs"
+                    >
+                      <option value="openai">OpenAI</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="groq">Groq</option>
+                    </select>
+                    <input
+                      type="text"
+                      maxLength={120}
+                      value={route.model}
+                      onChange={(event) => setForm((prev) => ({
+                        ...prev,
+                        ai_task_routes: {
+                          ...prev.ai_task_routes,
+                          [task]: { ...(prev.ai_task_routes?.[task] || assignment), model: event.target.value },
+                        },
+                      }))}
+                      aria-label={`${AI_TASK_LABELS[task]?.en || task} model`}
+                      placeholder={isAr ? "اسم الموديل" : "Model name"}
+                      className="min-w-0 rounded-lg border border-border/60 bg-card px-2.5 py-2 text-xs font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => testProvider(route.provider, route.model, `task:${task}`)}
+                      disabled={
+                        testingProvider === `task:${task}`
+                        || !aiStatus?.providers?.[route.provider]?.configured
+                        || !route.model?.trim()
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-[11px] font-semibold hover:border-zeus-gold/60 disabled:opacity-50"
+                    >
+                      {testingProvider === `task:${task}` && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {isAr ? "اختبار الموديل المحدد" : "Test selected model"}
+                    </button>
+                    {testResults[`task:${task}`] && (
+                      <span className={`inline-flex items-center gap-1 text-[11px] ${testResults[`task:${task}`].success ? "text-emerald-400" : "text-rose-400"}`}>
+                        {testResults[`task:${task}`].success
+                          ? <CheckCircle2 className="h-3 w-3" />
+                          : <XCircle className="h-3 w-3" />}
+                        {testResults[`task:${task}`].message}
+                      </span>
+                    )}
+                    {testResults[`task:${task}`]?.suggested_model && (
+                      <button
+                        type="button"
+                        onClick={() => applySuggestedModel(`task:${task}`, testResults[`task:${task}`].suggested_model)}
+                        className="rounded-full border border-amber-500/40 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10"
+                      >
+                        {isAr
+                          ? `استخدم الموديل المقترح: ${testResults[`task:${task}`].suggested_model}`
+                          : `Use suggested model: ${testResults[`task:${task}`].suggested_model}`}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <p className="text-[11px] text-muted-foreground">
             {isAr
-              ? "الاكتشاف وتوليد الخرائط يستخدمان OpenAI. ويُستخدم Gemini لبحث الوظائف كمان وكبديل لباقي المهام عند تعذر OpenAI."
-              : "Discovery and roadmap generation use OpenAI. Gemini also powers career research and is the fallback for other tasks when OpenAI is unavailable."}
+              ? "التوزيع الحالي هو الافتراضي. Groq غير مستخدم في أي مهمة إلا بعد تعيينه وحفظ الإعدادات."
+              : "The current assignments are defaults. Groq is not used for any task until you assign it and save."}
           </p>
-          <div className="text-[11px] text-muted-foreground">
-            {isAr ? "بحث الوظائف مضبوط حالياً: " : "Career research configured: "}
-            {[
-              ["Gemini", aiStatus?.career_research?.gemini],
-              ["OpenAI", aiStatus?.career_research?.openai],
-            ].map(([name, configured]) => (
-              <span key={name} className={configured ? "text-emerald-400 me-2" : "text-rose-400 me-2"}>
-                {name} {configured ? (isAr ? "جاهز" : "ready") : (isAr ? "مفتاحه غير مضبوط" : "key not configured")}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
 
-      {/* External APIs — YouTube only (the only external API actively used) */}
-      <div className="zeus-glass p-5 rounded-2xl border border-border/60 space-y-4">
+      {/* YouTube keys are configured on the dedicated AI settings page. */}
+      <div className="hidden">
         <div className="flex items-center gap-2 border-b border-border/40 pb-3">
           <Key className="text-zeus-gold" style={{ width: 20, height: 20 }} />
           <div>

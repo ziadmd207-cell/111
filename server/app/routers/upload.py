@@ -11,7 +11,7 @@ router = APIRouter()
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "../../../uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
-ALLOWED_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf", ".txt", ".md"}
+ALLOWED_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf", ".txt", ".md", ".webm", ".ogg", ".mp3", ".wav", ".m4a"}
 MAX_BYTES = 10 * 1024 * 1024
 
 # Magic-byte signatures (first bytes) per type — extension alone is not trusted.
@@ -22,11 +22,20 @@ MAGIC = {
     ".webp": [b"RIFF"],
     ".gif": [b"GIF87a", b"GIF89a"],
     ".pdf": [b"%PDF-"],
+    ".webm": [b"\x1a\x45\xdf\xa3"],
+    ".ogg": [b"OggS"],
+    ".mp3": [b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"],
+    ".wav": [b"RIFF"],
+    ".m4a": [b"\x00\x00\x00"],
 }
 
 
 def _sniff_ok(head: bytes, ext: str) -> bool:
     if ext in MAGIC:
+        if ext == ".wav":
+            return head.startswith(b"RIFF") and head[8:12] == b"WAVE"
+        if ext == ".m4a":
+            return len(head) >= 8 and head[4:8] == b"ftyp"
         return any(head.startswith(sig) for sig in MAGIC[ext])
     if ext in (".txt", ".md"):
         # Reject HTML/SVG/JS polyglots and null bytes in "text" uploads.

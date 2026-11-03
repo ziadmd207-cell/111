@@ -109,7 +109,8 @@ def get_subscription_plans(session: Session = Depends(get_session)):
         "STARTER": {
             "description": {"ar": "خطة البداية الأساسية لرحلة التعلم المخصصة والذكية.", "en": "The essential plan for your personalized learning journey."},
             "features": [
-                {"en": "Personalized learning roadmap", "ar": "خريطة تعلم مخصصة بالكامل لخبرتك وأهدافك"},
+                {"en": "Create a personalized learning roadmap", "ar": "إنشاء خريطة تعلم مخصصة بالكامل لخبرتك وأهدافك"},
+                {"en": "View the roadmap and study schedule", "ar": "عرض خارطة الطريق والجدول الدراسي"},
                 {"en": "AI Assistant", "ar": "المساعد الذكي ZEUS رفيقك الدراسي خطوة بخطوة"},
             ],
         },
@@ -117,18 +118,21 @@ def get_subscription_plans(session: Session = Depends(get_session)):
             "description": {"ar": "الخطة الاحترافية للتطبيق العملي واختبار المعرفة خطوة بخطوة.", "en": "A professional plan for hands-on practice and learning assessments."},
             "features": [
                 {"en": "Everything in STARTER", "ar": "كل مميزات باقة STARTER"},
-                {"en": "Interactive quizzes after every lesson", "ar": "اختبارات تفاعلية بعد كل درس لتقييم فهمك"},
+                {"en": "Unlock lessons, learning content, and videos", "ar": "فتح الدروس ومحتواها وفيديوهاتها"},
+                {"en": "30-question quiz after each lesson; 80% required to pass", "ar": "اختبار من 30 سؤالًا بعد كل درس، والنجاح من 80%"},
                 {"en": "A project after every stage", "ar": "مشروع عملي وتطبيقي شامل بعد كل مرحلة"},
+                {"en": "Learning progress", "ar": "متابعة تقدم التعلّم"},
             ],
         },
         "PRIME": {
             "description": {"ar": "الخطة الشاملة للتأهيل والجاهزية لسوق العمل والتوظيف.", "en": "The complete plan for career preparation and job readiness."},
             "features": [
                 {"en": "Everything in PRO", "ar": "كل مميزات باقة PRO"},
+                {"en": "Profile and certificates", "ar": "الملف الشخصي والشهادات"},
                 {"en": "Job search/recommendations relevant to your field", "ar": "بحث واقتراحات وظائف ذكية تطابق مجالك وخبرتك"},
                 {"en": "Access to a community related to your field", "ar": "الانضمام لمجتمع المتخصصين والزملاء في مجالك"},
-                {"en": "CV functionality", "ar": "أداة بناء وتحسين السيرة الذاتية الاحترافية (CV)"},
-                {"en": "Portfolio functionality", "ar": "أداة بناء وعرض البورتفوليو العام لمشاريعك"},
+                {"en": "CV builder", "ar": "أداة بناء وتحسين السيرة الذاتية الاحترافية (CV)"},
+                {"en": "Public portfolio builder", "ar": "أداة بناء وعرض البورتفوليو العام لمشاريعك"},
             ],
         },
     }

@@ -7,6 +7,7 @@ import re
 import time
 import urllib.parse
 import asyncio
+import threading
 
 try:
     from dotenv import load_dotenv
@@ -25,25 +26,54 @@ MIN_LIKES = 5
 # No hardcoded API keys: DB admin_settings > YOUTUBE_API_KEY env wins.
 # Empty key falls back to HTML scraping (no quota). Never commit a real key.
 YOUTUBE_API_FALLBACK_KEY = ""
+_youtube_key_cursor = 0
+_youtube_key_lock = threading.Lock()
 
-
-def _yt_key() -> str:
+def _yt_keys() -> list[str]:
     import os
+    keys = []
     try:
         from ..core.database import engine
         from sqlmodel import Session
         from ..models import AdminSetting
         with Session(engine) as session:
             s = session.get(AdminSetting, "default")
-            if s and s.youtube_api_key:
-                return s.youtube_api_key.strip()
+            if s:
+                configured = (s.ai_task_routes or {}).get("youtube_keys")
+                if isinstance(configured, list):
+                    keys.extend(
+                        (item.get("api_key", "") if isinstance(item, dict) else str(item or "")).strip()
+                        for item in configured
+                    )
+                elif s.youtube_api_key:
+                    keys.append(s.youtube_api_key.strip())
     except Exception:
         pass
     try:
         from ..core.config import settings
-        return (os.getenv("YOUTUBE_API_KEY", "") or settings.youtube_api_key or YOUTUBE_API_FALLBACK_KEY).strip()
+        keys.extend([
+            os.getenv("YOUTUBE_API_KEY", "").strip(),
+            (settings.youtube_api_key or "").strip(),
+            YOUTUBE_API_FALLBACK_KEY.strip(),
+        ])
     except Exception:
-        return (os.getenv("YOUTUBE_API_KEY", "") or YOUTUBE_API_FALLBACK_KEY).strip()
+        keys.extend([os.getenv("YOUTUBE_API_KEY", "").strip(), YOUTUBE_API_FALLBACK_KEY.strip()])
+    return list(dict.fromkeys(key for key in keys if key))
+
+
+def _rotated_yt_keys() -> list[str]:
+    global _youtube_key_cursor
+    keys = _yt_keys()
+    if not keys:
+        return []
+    with _youtube_key_lock:
+        start = _youtube_key_cursor % len(keys)
+        _youtube_key_cursor += 1
+    return keys[start:] + keys[:start]
+
+
+def _yt_key() -> str:
+    return next(iter(_rotated_yt_keys()), "")
 
 
 _STOPWORDS = {
@@ -56,7 +86,18 @@ _STOPWORDS = {
 
 
 def _rel_words(text: str) -> set:
-    return {w for w in re.findall(r"[\w\u0600-\u06FF]{3,}", (text or "").lower())} - _STOPWORDS
+    normalized_text = (text or "").lower()
+    words = {
+        word for word in re.findall(r"[\w\u0600-\u06FF]{2,}", normalized_text)
+        if word not in _STOPWORDS and (len(word) >= 3 or word in {"ai", "ml", "ui", "ux"})
+    }
+    if "ai" in words or "genai" in words or {"artificial", "intelligence"}.issubset(words):
+        words.update({"ai", "artificial", "intelligence"})
+    if "ml" in words or re.search(r"\bmachine\s+learning\b", normalized_text):
+        words.update({"ml", "machine", "learning"})
+    if "nlp" in words or re.search(r"\bnatural\s+language\s+processing\b", normalized_text):
+        words.update({"nlp", "natural", "language", "processing"})
+    return words
 
 
 def _relevance(title: str, *contexts: str) -> int:
@@ -77,75 +118,82 @@ async def _search_youtube_api(query: str, lang: str, max_results=3, must_match: 
     cached 24h per node so repeated lesson opens cost nothing.
     Raises/falls back silently (returns []) on quota/key errors.
     """
-    key = _yt_key()
-    if not key:
+    keys = _rotated_yt_keys()
+    if not keys:
         return []
     q = f"{query} {'شرح عربي' if lang == 'ar' else 'tutorial'}"
-    try:
-        async with httpx.AsyncClient(timeout=12) as client:
-            s = await client.get(
-                "https://www.googleapis.com/youtube/v3/search",
-                params={
-                    "key": key, "q": q, "part": "snippet", "type": "video",
-                    "maxResults": 10, "order": "viewCount",
-                    "relevanceLanguage": "ar" if lang == "ar" else "en",
-                    "safeSearch": "moderate", "videoEmbeddable": "true",
-                },
-            )
-            if s.status_code != 200:
-                print(f"youtube api search {s.status_code}: {s.text[:200]}")
-                return []
-            ids = [it["id"]["videoId"] for it in s.json().get("items", []) if it.get("id", {}).get("videoId")]
-            if not ids:
-                return []
-            v = await client.get(
-                "https://www.googleapis.com/youtube/v3/videos",
-                params={"key": key, "id": ",".join(ids), "part": "statistics,snippet,contentDetails"},
-            )
-            if v.status_code != 200:
-                print(f"youtube api videos {v.status_code}: {v.text[:200]}")
-                return []
-            out = []
-            for it in v.json().get("items", []):
-                vid = it.get("id", "")
-                stats = it.get("statistics", {}) or {}
-                try:
-                    views = int(stats.get("viewCount", 0) or 0)
-                except Exception:
-                    views = 0
-                try:
-                    likes = int(stats.get("likeCount", 0) or 0)
-                except Exception:
-                    likes = 0
-                # Quality gates: must be actually watched AND liked
-                if views < MIN_VIEWS or likes < MIN_LIKES:
+    for key in keys:
+        try:
+            async with httpx.AsyncClient(timeout=12) as client:
+                search = await client.get(
+                    "https://www.googleapis.com/youtube/v3/search",
+                    params={
+                        "key": key, "q": q, "part": "snippet", "type": "video",
+                        "maxResults": 10, "order": "viewCount",
+                        "relevanceLanguage": "ar" if lang == "ar" else "en",
+                        "safeSearch": "moderate", "videoEmbeddable": "true",
+                    },
+                )
+                if search.status_code != 200:
+                    print(f"youtube api search failed ({search.status_code}); trying next key")
                     continue
-                title = ((it.get("snippet", {}) or {}).get("title")) or query
-                dur = _parse_iso8601_duration(((it.get("contentDetails", {}) or {}).get("duration")) or "")
-                out.append({
-                    "videoId": vid, "views": views, "likes": likes,
-                    "duration_sec": dur, "duration_display": _fmt_duration(dur),
-                    "relevance": _relevance(title, query, must_match),
-                    "url": f"https://www.youtube.com/watch?v={vid}", "title": title,
-                })
-            # Rank: topic relevance FIRST (a viral driving video must never win
-            # an AI lesson), then views, then likes as engagement proof.
-            if must_match:
-                topic_words = _rel_words(must_match)
-                out = [v for v in out if _rel_words(v.get("title", "")) & topic_words]
-            out.sort(
-                key=lambda x: (
-                    x.get("relevance", 0),
-                    _duration_match_score(x.get("duration_sec", 0), preferred_length),
-                    x["views"],
-                    x["likes"],
-                ),
-                reverse=True,
-            )
-            return out[:max_results]
-    except Exception as e:
-        print(f"youtube api error: {e}")
-        return []
+                ids = [item["id"]["videoId"] for item in search.json().get("items", []) if item.get("id", {}).get("videoId")]
+                if not ids:
+                    return []
+                videos = await client.get(
+                    "https://www.googleapis.com/youtube/v3/videos",
+                    params={"key": key, "id": ",".join(ids), "part": "statistics,snippet,contentDetails"},
+                )
+                if videos.status_code != 200:
+                    print(f"youtube api video details failed ({videos.status_code}); trying next key")
+                    continue
+                out = []
+                for item in videos.json().get("items", []):
+                    video_id = item.get("id", "")
+                    stats = item.get("statistics", {}) or {}
+                    try:
+                        views = int(stats.get("viewCount", 0) or 0)
+                    except (TypeError, ValueError):
+                        views = 0
+                    try:
+                        likes = int(stats.get("likeCount", 0) or 0)
+                    except (TypeError, ValueError):
+                        likes = 0
+                    if views < MIN_VIEWS or likes < MIN_LIKES:
+                        continue
+                    title = ((item.get("snippet", {}) or {}).get("title")) or query
+                    duration = _parse_iso8601_duration(((item.get("contentDetails", {}) or {}).get("duration")) or "")
+                    out.append({
+                        "videoId": video_id, "views": views, "likes": likes,
+                        "duration_sec": duration, "duration_display": _fmt_duration(duration),
+                        "description": ((item.get("snippet", {}) or {}).get("description")) or "",
+                        "relevance": _relevance(
+                            title,
+                            query,
+                            must_match,
+                            ((item.get("snippet", {}) or {}).get("description")) or "",
+                        ),
+                        "url": f"https://www.youtube.com/watch?v={video_id}", "title": title,
+                    })
+                if must_match:
+                    topic_words = _rel_words(must_match)
+                    out = [
+                        item for item in out
+                        if (_rel_words(item.get("title", "")) | _rel_words(item.get("description", ""))) & topic_words
+                    ]
+                out.sort(
+                    key=lambda item: (
+                        item.get("relevance", 0),
+                        _duration_match_score(item.get("duration_sec", 0), preferred_length),
+                        item["views"],
+                        item["likes"],
+                    ),
+                    reverse=True,
+                )
+                return out[:max_results]
+        except Exception as exc:
+            print(f"youtube api request failed ({type(exc).__name__}); trying next key")
+    return []
 
 def _cache_key(node_id, lang, style):
     return f"{node_id}:{lang}:{style}"
@@ -310,27 +358,32 @@ async def _video_meta(vid: str) -> dict:
         return {"embeddable": False, "duration_sec": 0, "title": None}
     if vid in _meta_cache:
         return _meta_cache[vid]
-    meta = {"embeddable": False, "duration_sec": 0, "title": None}
-    key = _yt_key()
-    try:
-        if key:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(
-                    "https://www.googleapis.com/youtube/v3/videos",
-                    params={"key": key, "id": vid, "part": "status,contentDetails,snippet"},
-                )
-                if r.status_code == 200:
-                    items = r.json().get("items", [])
-                    if items:
-                        it = items[0]
-                        st = it.get("status", {}) or {}
-                        meta["embeddable"] = bool(st.get("embeddable", False)) and st.get("privacyStatus") in ("public", "unlisted")
-                        meta["duration_sec"] = _parse_iso8601_duration(((it.get("contentDetails", {}) or {}).get("duration")) or "")
-                        meta["title"] = ((it.get("snippet", {}) or {}).get("title"))
-        else:
-            meta["embeddable"] = (await _validate_youtube_video(vid)) is not None
-    except Exception as e:
-        print(f"video meta error: {e}")
+    meta = {"embeddable": False, "duration_sec": 0, "title": None, "description": ""}
+    keys = _rotated_yt_keys()
+    if keys:
+        for key in keys:
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    r = await client.get(
+                        "https://www.googleapis.com/youtube/v3/videos",
+                        params={"key": key, "id": vid, "part": "status,contentDetails,snippet"},
+                    )
+                if r.status_code != 200:
+                    print(f"youtube video meta status {r.status_code}; trying next key")
+                    continue
+                items = r.json().get("items", [])
+                if items:
+                    it = items[0]
+                    st = it.get("status", {}) or {}
+                    meta["embeddable"] = bool(st.get("embeddable", False)) and st.get("privacyStatus") in ("public", "unlisted")
+                    meta["duration_sec"] = _parse_iso8601_duration(((it.get("contentDetails", {}) or {}).get("duration")) or "")
+                    meta["title"] = ((it.get("snippet", {}) or {}).get("title"))
+                    meta["description"] = ((it.get("snippet", {}) or {}).get("description")) or ""
+                break
+            except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError) as e:
+                print(f"video meta error ({type(e).__name__}); trying next key")
+    else:
+        meta["embeddable"] = (await _validate_youtube_video(vid)) is not None
     _meta_cache[vid] = meta
     return meta
 
@@ -343,19 +396,20 @@ async def _batch_embeddable(vids: list) -> set:
     known = {v for v in vids if v in _embed_cache}
     unknown = [v for v in vids if v not in _embed_cache]
     ok = {v for v in known if _embed_cache[v]}
-    key = _yt_key()
-    if unknown and key:
-        try:
-            async with httpx.AsyncClient(timeout=12) as client:
-                # 50 ids per call max
-                for i in range(0, len(unknown), 50):
-                    chunk = unknown[i:i + 50]
-                    r = await client.get(
-                        "https://www.googleapis.com/youtube/v3/videos",
-                        params={"key": key, "id": ",".join(chunk), "part": "status"},
-                    )
+    keys = _rotated_yt_keys()
+    if unknown and keys:
+        # 50 ids per call max. Retry each chunk with another key on quota/access failures.
+        for i in range(0, len(unknown), 50):
+            chunk = unknown[i:i + 50]
+            for key in keys:
+                try:
+                    async with httpx.AsyncClient(timeout=12) as client:
+                        r = await client.get(
+                            "https://www.googleapis.com/youtube/v3/videos",
+                            params={"key": key, "id": ",".join(chunk), "part": "status"},
+                        )
                     if r.status_code != 200:
-                        print(f"youtube batch status {r.status_code}")
+                        print(f"youtube batch status {r.status_code}; trying next key")
                         continue
                     for it in r.json().get("items", []):
                         st = it.get("status", {}) or {}
@@ -363,9 +417,10 @@ async def _batch_embeddable(vids: list) -> set:
                         _embed_cache[it.get("id", "")] = good
                         if good:
                             ok.add(it.get("id", ""))
-        except Exception as e:
-            print(f"youtube batch error: {e}")
-    if unknown and not key:
+                    break
+                except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError) as e:
+                    print(f"youtube batch error ({type(e).__name__}); trying next key")
+    if unknown and not keys:
         for v in unknown:
             good = (await _validate_youtube_video(v)) is not None
             _embed_cache[v] = good
@@ -431,7 +486,9 @@ async def resolve_lesson_video(
         vid = _video_id_from_url(candidate_url)
         if vid:
             meta = await _video_meta(vid)
-            if meta.get("embeddable") and _rel_words(meta.get("title") or "") & _rel_words(topic):
+            if meta.get("embeddable") and (
+                _rel_words(meta.get("title") or "") | _rel_words(meta.get("description") or "")
+            ) & _rel_words(topic):
                 duration = int(meta.get("duration_sec", 0) or 0)
                 candidate_fallback = (candidate_url, meta.get("title"), duration)
                 if length_target == "mixed" or _duration_match_score(duration, length_target):
@@ -448,7 +505,7 @@ async def resolve_lesson_video(
     for v in alt:
         if await is_embeddable(v["videoId"]):
             dur = v.get("duration_sec") or await get_video_duration(v["videoId"])
-            if _rel_words(v.get("title", "")) & _rel_words(topic):
+            if (_rel_words(v.get("title", "")) | _rel_words(v.get("description", ""))) & _rel_words(topic):
                 resolved = (v["url"], v.get("title"), int(dur or 0))
                 if length_target == "mixed" or _duration_match_score(resolved[2], length_target):
                     return resolved

@@ -49,19 +49,44 @@ export default function Career() {
   const loadJobs = async () => {
     setJobLoading(true);
     setJobError("");
+    setJobs([]);
     try {
       const res = await api.functions.invoke("searchJobs", { profile, cv, lang });
       const data = res.data || res;
-      const jobs = data.jobs || [];
+      const jobs = Array.isArray(data.jobs) ? data.jobs.slice(0, 5) : [];
+      if (jobs.length !== 5) throw new Error(isAr ? "لم يتم العثور على خمس وظائف بروابط تقديم مباشرة." : "Five jobs with direct application links were not found.");
       setJobs(jobs);
       if (!jobs.length) {
         setJobError(isAr ? "ملقتش وظائف دلوقتي — دوس تحديث وحاول تاني." : "No jobs found right now — hit refresh and retry.");
       }
     } catch (e) {
-      setJobError(isAr ? "تعثر البحث عن وظائف — دوس تحديث وحاول تاني." : "Job search stumbled — hit refresh and retry.");
+      setJobError(e.message || (isAr ? "تعثر البحث عن وظائف — دوس تحديث وحاول تاني." : "Job search stumbled — hit refresh and retry."));
+    } finally {
+      setJobLoading(false);
     }
-    setJobLoading(false);
   };
+
+  useEffect(() => {
+    if (loading || !profile) return undefined;
+    let active = true;
+    setJobLoading(true);
+    setJobError("");
+    api.functions.invoke("searchJobs", { profile, cv, lang })
+      .then((response) => {
+        if (!active) return;
+        const data = response.data || response;
+        const matches = Array.isArray(data.jobs) ? data.jobs.slice(0, 5) : [];
+        setJobs(matches);
+        if (matches.length !== 5) {
+          setJobError(isAr ? "لم يتم العثور على خمس وظائف بروابط تقديم مباشرة." : "Five jobs with direct application links were not found.");
+        }
+      })
+      .catch((error) => {
+        if (active) setJobError(error.message || (isAr ? "تعذر تحديث الوظائف المناسبة لمهاراتك." : "Couldn't refresh jobs for your current skills."));
+      })
+      .finally(() => { if (active) setJobLoading(false); });
+    return () => { active = false; };
+  }, [loading, profile, cv, lang, isAr]);
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="text-zeus-gold animate-spin" style={{ width: 28, height: 28 }} /></div>;
   if (loadError && !projects.length && !cv) return (

@@ -10,6 +10,10 @@ class User(SQLModel, table=True):
     email: str = Field(index=True, unique=True)
     password_hash: str = Field(default="")
     full_name: Optional[str] = None
+    phone_country: Optional[str] = Field(default=None, index=True)
+    phone_country_code: Optional[str] = None
+    phone_number: Optional[str] = None
+    phone_e164: Optional[str] = Field(default=None, unique=True, index=True)
     role: str = Field(default="user", index=True)
     # Activation gate: "active", "pending", "suspended"
     status: str = Field(default="active", index=True)

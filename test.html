@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>اختبار مزودي الذكاء الاصطناعي</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Tahoma, Arial, sans-serif;
+      background: #090d18;
+      color: #eef2ff;
+      font-synthesis: none;
+      --panel: #111827;
+      --line: #283449;
+      --muted: #9aa8bd;
+      --gold: #f2c56b;
+      --green: #6ee7a0;
+      --red: #fb8e9b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 32px 16px;
+      background:
+        radial-gradient(ellipse at 50% -20%, #263353 0, transparent 55%),
+        #090d18;
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .page { width: min(940px, 100%); margin: 0 auto; }
+    header { margin: 0 0 24px; }
+    h1 { margin: 0 0 8px; font-size: clamp(24px, 5vw, 34px); }
+    h2 { margin: 0; font-size: 17px; }
+    p { line-height: 1.8; }
+    .intro, .hint { color: var(--muted); font-size: 13px; }
+
+    .warning {
+      padding: 13px 15px;
+      margin: 16px 0;
+      border: 1px solid #6c5730;
+      border-radius: 12px;
+      background: #332817;
+      color: #ffe3a3;
+      font-size: 13px;
+      line-height: 1.8;
+    }
+
+    .panel {
+      margin: 14px 0;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+      box-shadow: 0 16px 50px #0003;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field { display: grid; gap: 7px; min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+    label { color: #d7dfed; font-size: 13px; font-weight: 700; }
+
+    input, select, textarea {
+      width: 100%;
+      min-height: 43px;
+      padding: 10px 12px;
+      border: 1px solid #35435b;
+      border-radius: 9px;
+      outline: none;
+      background: #0c1220;
+      color: #f3f6fc;
+    }
+
+    textarea { min-height: 84px; resize: vertical; line-height: 1.7; }
+    input:focus, select:focus, textarea:focus { border-color: var(--gold); }
+    input[type="password"], input[type="text"], #model-search { direction: ltr; text-align: left; }
+
+    .key-row { display: flex; gap: 8px; }
+    .key-row input { flex: 1; min-width: 0; }
+    .key-row button { flex: 0 0 auto; }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 15px; }
+
+    .btn {
+      min-height: 39px;
+      padding: 9px 14px;
+      border: 1px solid #3a4962;
+      border-radius: 9px;
+      background: #1a2537;
+      color: #f5f7fb;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .btn:hover:not(:disabled) { border-color: var(--gold); }
+    .btn.primary { border-color: var(--gold); background: #edc36a; color: #17130b; }
+    .btn.danger { border-color: #70404b; color: #ffc0c8; }
+    .btn:disabled { cursor: wait; opacity: .55; }
+    .status { min-height: 22px; margin: 12px 0 0; font-size: 13px; line-height: 1.7; }
+    .status.success { color: var(--green); }
+    .status.error { color: var(--red); }
+    .status.info { color: #c7d2e3; }
+    .hidden { display: none !important; }
+
+    .model-toolbar { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+    .model-toolbar input { flex: 1; }
+    .model-count { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+    .model-list { display: grid; gap: 8px; max-height: 410px; overflow: auto; }
+
+    .model-card {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      padding: 12px;
+      border: 1px solid #2b384c;
+      border-radius: 10px;
+      background: #0c1220;
+    }
+
+    .model-card:has(input:checked) { border-color: var(--gold); background: #1e1b14; }
+    .model-card input { width: 16px; min-height: 16px; margin: 2px 0 0; accent-color: #edc36a; }
+    .model-name { direction: ltr; text-align: left; overflow-wrap: anywhere; font: 700 13px Consolas, monospace; }
+    .model-meta { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+    .chat-log { display: grid; gap: 10px; max-height: 360px; overflow: auto; padding: 4px; }
+    .bubble { max-width: 88%; padding: 10px 12px; border: 1px solid #2c394d; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+    .bubble.user { justify-self: start; background: #1a2c3b; }
+    .bubble.assistant { justify-self: end; background: #1b2537; }
+    .bubble.error { border-color: #75404b; color: #ffc0c8; }
+    .report { min-height: 250px; font: 12px/1.7 Consolas, monospace; direction: ltr; text-align: left; }
+    .footnote { margin: 11px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+    .ltr { direction: ltr; text-align: left; }
+
+    @media (max-width: 620px) {
+      body { padding: 22px 12px; }
+      .panel { padding: 15px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .field.full { grid-column: auto; }
+      .model-toolbar { align-items: stretch; flex-direction: column; }
+      .model-count { align-self: flex-start; }
+      .key-row { flex-direction: column; }
+      .bubble { max-width: 96%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <h1>اختبار Groq</h1>
+      <p class="intro">الصق مفتاح Groq واضغط اختبار؛ الصفحة تختار الموديل تلقائيًا وتتحقق من الاتصال قبل فتح المحادثة.</p>
+      <div class="warning">
+        المفتاح يُستخدم مؤقتًا في هذه الصفحة ويُرسل مباشرةً إلى Groq، ولا يُحفظ أو يُرسل إلى خادم ZEUS. لا تحفظ الملف وفيه مفتاح ولا تشارك صورًا تحتوي عليه. اضغط «مسح المفتاح» عند الانتهاء. الاختبار والرسائل قد يستهلكان من حصتك.
+      </div>
+    </header>
+
+    <section class="panel" aria-labelledby="setup-title">
+      <div class="panel-title"><h2 id="setup-title">١. إعداد الاتصال</h2></div>
+      <div class="form-grid">
+        <div class="field full">
+          <label for="key">مفتاح Groq API</label>
+          <div class="key-row">
+            <input id="key" type="password" dir="ltr" autocomplete="off" spellcheck="false" placeholder="gsk_... — الصقه هنا؛ لا يُحفظ">
+            <button class="btn" id="toggle-key" type="button">إظهار</button>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="discover" type="button">اختبر المفتاح تلقائيًا</button>
+        <button class="btn danger" id="clear-key" type="button">مسح المفتاح والبيانات</button>
+      </div>
+      <p id="connection-status" class="status" role="status" aria-live="polite"></p>
+      <p class="footnote">الموديل المستخدم تلقائيًا: <code>openai/gpt-oss-20b</code>. المفتاح لا يخرج إلى غير Groq ولا يُخزن في هذه الصفحة.</p>
+    </section>
+
+    <section class="panel hidden" id="models-section" aria-labelledby="models-title">
+      <div class="panel-title"><h2 id="models-title">٢. نتيجة اختبار Groq</h2></div>
+      <div class="model-toolbar hidden">
+        <input id="model-search" type="search" placeholder="ابحث باسم الموديل..." aria-label="ابحث باسم الموديل">
+        <span class="model-count" id="model-count"></span>
+      </div>
+      <div id="model-list" class="model-list hidden"></div>
+      <div class="actions">
+        <button class="btn primary hidden" id="probe-model" type="button" disabled>اختبر</button>
+      </div>
+      <p id="model-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="panel hidden" id="chat-section" aria-labelledby="chat-title">
+      <div class="panel-title">
+        <h2 id="chat-title">٣. محادثة تجريبية</h2>
+        <span id="selected-model-badge" class="model-count"></span>
+      </div>
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+      <form id="chat-form" class="field" style="margin-top:14px">
+        <label for="chat-input">رسالتك</label>
+        <textarea id="chat-input" maxlength="4000" placeholder="اكتب رسالة قصيرة لتجربة الموديل..."></textarea>
+        <div class="actions" style="margin-top:0">
+          <button class="btn primary" id="send-message" type="submit">إرسال</button>
+          <button class="btn" id="clear-chat" type="button">مسح المحادثة</button>
+        </div>
+      </form>
+      <p id="chat-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="panel hidden" id="report-section" aria-labelledby="report-title">
+      <div class="panel-title"><h2 id="report-title">٤. تقرير قابل للنسخ</h2></div>
+      <textarea class="report" id="report" readonly aria-label="تقرير تشخيص الاتصال"></textarea>
+      <div class="actions">
+        <button class="btn primary" id="copy-report" type="button">نسخ التقرير</button>
+      </div>
+      <p class="footnote">التقرير لا يتضمن مفتاح API ولا نص المحادثة. راجعه قبل إرساله، ولا تضف المفتاح بنفسك.</p>
+      <p id="copy-status" class="status" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = (selector) => document.querySelector(selector);
+      const provider = "groq";
+      const keyInput = $("#key");
+      const connectionStatus = $("#connection-status");
+      const modelStatus = $("#model-status");
+      const chatStatus = $("#chat-status");
+      const modelList = $("#model-list");
+      const modelsSection = $("#models-section");
+      const chatSection = $("#chat-section");
+      const reportSection = $("#report-section");
+
+      const PROVIDERS = {
+        groq: {
+          name: "Groq",
+          defaultModel: "openai/gpt-oss-20b",
+          chatUrl: "https://api.groq.com/openai/v1/chat/completions",
+        },
+      };
+
+      const state = {
+        models: [],
+        selectedModel: "",
+        messages: [],
+        chatHistory: [],
+        lastProbe: null,
+        lastError: null,
+        discoveredAt: null,
+        busy: false,
+      };
+
+      function setStatus(element, message, kind = "info") {
+        element.textContent = message;
+        element.className = `status ${kind}`;
+      }
+
+      function safeErrorMessage(error) {
+        const message = String(error?.message || error || "حدث خطأ غير معروف");
+        return message
+          .replace(/https?:\/\/\S+/gi, "[رابط المزوّد]")
+          .replace(/(?:sk-[A-Za-z0-9_-]{8,}|gsk_[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{20,})/g, "[مفتاح مخفي]")
+          .slice(0, 600);
+      }
+
+      function explainProviderError(provider, status, code, message) {
+        const detail = `${code} ${message}`.toLowerCase();
+        if (status === 401) return "تحقق من صحة مفتاح Groq API وأنه كامل وغير منتهي.";
+        if (status === 403) {
+          return "المفتاح معروف لكن المشروع أو الحساب لا يملك صلاحية هذا الطلب أو الموديل.";
+        }
+        if (status === 429 && /insufficient_quota|billing|quota/.test(detail)) {
+          return "انتهت الحصة المتاحة لهذا المفتاح أو الموديل؛ راجع حدود الاستخدام لدى Groq.";
+        }
+        if (status === 429) {
+          return "تم تجاوز حدّ الطلبات؛ انتظر قليلًا ثم أعد المحاولة.";
+        }
+        if (status === 404) {
+          return "الموديل الافتراضي غير متاح لهذا المفتاح حاليًا.";
+        }
+        if (status === 400) {
+          return "المزوّد رفض صيغة الطلب أو أحد الخيارات؛ راجع رسالة الخطأ ورمزها في التقرير.";
+        }
+        return "";
+      }
+
+      async function providerRequest(url, options = {}) {
+        let response;
+        try {
+          response = await fetch(url, { ...options, referrerPolicy: "no-referrer" });
+        } catch (error) {
+          const corsError = new Error(
+            "تعذر الوصول من المتصفح (غالبًا CORS أو اتصال). لم يُرسل المفتاح إلى ZEUS. جرّب فتح الصفحة عبر localhost أو اختبر من شبكة أخرى."
+          );
+          corsError.kind = "browser_network";
+          corsError.cause = error;
+          throw corsError;
+        }
+
+        const raw = await response.text();
+        let body = {};
+        try { body = raw ? JSON.parse(raw) : {}; } catch { body = { message: raw }; }
+        if (!response.ok) {
+          const providerMessage = body?.error?.message || body?.message || `HTTP ${response.status}`;
+          const providerCode = body?.error?.code || body?.error?.status || "";
+          const providerType = body?.error?.type || "";
+          const hint = explainProviderError(
+            provider,
+            response.status,
+            providerCode,
+            providerMessage,
+          );
+          const error = new Error(
+            `HTTP ${response.status}: ${safeErrorMessage(providerMessage)}${hint ? `\n${hint}` : ""}`
+          );
+          error.status = response.status;
+          error.providerCode = providerCode;
+          error.providerType = providerType;
+          error.requestId = response.headers.get("x-request-id")
+            || response.headers.get("x-goog-request-id")
+            || "";
+          throw error;
+        }
+        return { body, status: response.status };
+      }
+
+      function authOptions(key) {
+        return { headers: { Authorization: `Bearer ${key}` } };
+      }
+
+      function addReportModel(model) {
+        const details = [];
+        if (model.displayName) details.push(`الاسم: ${model.displayName}`);
+        if (model.owner) details.push(`المالك: ${model.owner}`);
+        if (model.created) details.push(`تاريخ الإنشاء (Unix): ${model.created}`);
+        if (model.version) details.push(`الإصدار: ${model.version}`);
+        if (model.inputLimit) details.push(`حد الإدخال: ${model.inputLimit} token`);
+        if (model.outputLimit) details.push(`حد الإخراج: ${model.outputLimit} token`);
+        if (model.methods?.length) details.push(`العمليات التي تعرضها Google: ${model.methods.join(", ")}`);
+        if (model.description) details.push(`الوصف: ${model.description}`);
+        return details;
+      }
+
+      function updateReport() {
+        if (!reportSection.classList.contains("hidden")) {
+          $("#report").value = buildReport();
+        }
+      }
+
+      function buildReport() {
+        const info = PROVIDERS[provider];
+        const selected = state.models.find((model) => model.id === state.selectedModel);
+        const details = selected ? addReportModel(selected) : [];
+        const report = [
+          "ZEUS AI Provider Diagnostic",
+          `وقت الاختبار: ${state.discoveredAt || "لم يُختبر"}`,
+          `المزوّد: ${info.name}`,
+          `مسار المحادثة: ${info.chatUrl}`,
+          `الموديل الثابت المستخدم تلقائيًا: ${state.selectedModel || info.defaultModel}`,
+          `الموديل المحدد: ${state.selectedModel || "لا يوجد"}`,
+          `تفاصيل الموديل: ${details.join(" | ") || "لا توجد بيانات وصفية إضافية"}`,
+          `اختبار الموديل: ${state.lastProbe?.success ? "نجح" : state.lastProbe ? "فشل" : "لم يُختبر"}`,
+          `HTTP status: ${state.lastProbe?.httpStatus ?? "غير متاح"}`,
+          `رمز خطأ المزوّد: ${state.lastError?.providerCode || "لا يوجد"}`,
+          `نوع خطأ المزوّد: ${state.lastError?.providerType || "لا يوجد"}`,
+          `معرّف طلب المزوّد: ${state.lastError?.requestId || "غير متاح"}`,
+          `نوع الفشل المحلي: ${state.lastError?.kind || "لا يوجد"}`,
+          `تفاصيل الخطأ: ${state.lastError?.message || "لا يوجد"}`,
+          `رسائل محادثة ناجحة: ${state.chatHistory.length}`,
+          "المفتاح: لم يتم تضمينه في هذا التقرير.",
+          "نصوص المحادثة: لم يتم تضمينها في هذا التقرير.",
+          "تنبيه: الموديل المقترح ليس ضمانًا بأنه مجاني أو متاح؛ الاستخدام والحصة يعتمدان على حسابك وخطتك لدى المزوّد.",
+        ];
+        return report.join("\n");
+      }
+
+      function renderModels() {
+        $("#probe-model").disabled = !state.selectedModel || state.busy;
+        $("#selected-model-badge").textContent = state.selectedModel || "";
+      }
+
+      function openAIRequestBody(messages, model) {
+        const request = {
+          model,
+          messages,
+        };
+        const lowerModel = model.toLowerCase();
+        if (
+          lowerModel.startsWith("gpt-5")
+          || lowerModel.startsWith("o1")
+          || lowerModel.startsWith("o3")
+          || lowerModel.startsWith("o4")
+          || lowerModel.startsWith("openai/gpt-oss-")
+          || lowerModel.startsWith("openai/o")
+        ) {
+          request.max_completion_tokens = 500;
+        } else {
+          request.max_tokens = 500;
+          request.temperature = 0.4;
+        }
+        return request;
+      }
+
+      async function sendToModel(key, modelId, messages) {
+        const { body, status } = await providerRequest(PROVIDERS.groq.chatUrl, {
+          method: "POST",
+          headers: { ...authOptions(key).headers, "content-type": "application/json" },
+          body: JSON.stringify(openAIRequestBody(messages, modelId)),
+        });
+        const text = body?.choices?.[0]?.message?.content;
+        if (typeof text !== "string" || !text.trim()) {
+          throw new Error("وصل رد من المزوّد لكن بدون نص محادثة.");
+        }
+        return { text: text.trim(), status, usage: body.usage || null };
+      }
+
+      function addBubble(role, content, isError = false) {
+        const bubble = document.createElement("div");
+        bubble.className = `bubble ${role}${isError ? " error" : ""}`;
+        bubble.textContent = content;
+        $("#chat-log").append(bubble);
+        bubble.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+
+      async function runProbe() {
+        const key = keyInput.value.trim();
+        if (!key || !state.selectedModel) return;
+
+        state.busy = true;
+        renderModels();
+        setStatus(modelStatus, "جارٍ إرسال طلب قصير للموديل المحدد...", "info");
+        state.lastError = null;
+        try {
+          const result = await sendToModel(key, state.selectedModel, [
+            { role: "user", content: "Reply with exactly: OK" },
+          ]);
+          state.lastProbe = { operation: "chat_completion_probe", httpStatus: result.status, success: true };
+          state.chatHistory.push({ success: true, httpStatus: result.status, usage: result.usage });
+          setStatus(modelStatus, `نجح اتصال المحادثة بالموديل ${state.selectedModel}.`, "success");
+          chatSection.classList.remove("hidden");
+          setStatus(connectionStatus, `تم الاتصال بنجاح باستخدام ${state.selectedModel}.`, "success");
+        } catch (error) {
+          state.lastProbe = {
+            operation: "chat_completion_probe",
+            httpStatus: error.status || null,
+            success: false,
+          };
+          state.lastError = {
+            providerCode: error.providerCode || "",
+            providerType: error.providerType || "",
+            requestId: error.requestId || "",
+            message: safeErrorMessage(error),
+            kind: error.kind || "",
+          };
+          setStatus(modelStatus, safeErrorMessage(error), "error");
+          chatSection.classList.add("hidden");
+          setStatus(connectionStatus, safeErrorMessage(error), "error");
+        } finally {
+          state.busy = false;
+          renderModels();
+          updateReport();
+        }
+      }
+
+      async function discover() {
+        if (state.busy) return;
+        const key = keyInput.value.trim();
+        state.models = [{ id: PROVIDERS.groq.defaultModel, owner: "Groq" }];
+        state.selectedModel = PROVIDERS.groq.defaultModel;
+        state.lastProbe = null;
+        state.lastError = null;
+        state.discoveredAt = null;
+        state.messages = [];
+        state.chatHistory = [];
+        modelList.replaceChildren();
+        $("#chat-log").replaceChildren();
+        setStatus(chatStatus, "", "info");
+        modelsSection.classList.remove("hidden");
+        chatSection.classList.add("hidden");
+        reportSection.classList.remove("hidden");
+
+        if (!key) {
+          setStatus(connectionStatus, "أدخل مفتاح المزوّد أولًا.", "error");
+          return;
+        }
+
+        state.busy = true;
+        $("#discover").disabled = true;
+        $("#clear-key").disabled = true;
+        setStatus(connectionStatus, "جارٍ اختبار مفتاح Groq بالموديل الافتراضي...", "info");
+        state.lastError = null;
+        try {
+          state.discoveredAt = new Date().toISOString();
+          renderModels();
+          await runProbe();
+        } catch (error) {
+          state.lastError = {
+            providerCode: error.providerCode || "",
+            providerType: error.providerType || "",
+            requestId: error.requestId || "",
+            message: safeErrorMessage(error),
+            kind: error.kind || "",
+          };
+          state.lastProbe = { operation: "chat_completion_probe", httpStatus: error.status || null, success: false };
+          state.discoveredAt = new Date().toISOString();
+          setStatus(connectionStatus, safeErrorMessage(error), "error");
+        } finally {
+          state.busy = false;
+          $("#discover").disabled = false;
+          $("#clear-key").disabled = false;
+          if (state.models.length) renderModels();
+          updateReport();
+        }
+      }
+
+      async function submitChat(event) {
+        event.preventDefault();
+        const text = $("#chat-input").value.trim();
+        const key = keyInput.value.trim();
+        if (!text || !key || !state.selectedModel || state.busy) return;
+
+        state.messages.push({ role: "user", content: text });
+        addBubble("user", text);
+        $("#chat-input").value = "";
+        state.busy = true;
+        $("#send-message").disabled = true;
+        $("#discover").disabled = true;
+        $("#clear-key").disabled = true;
+        $("#clear-chat").disabled = true;
+        setStatus(chatStatus, "الموديل يكتب...", "info");
+        try {
+          const response = await sendToModel(key, state.selectedModel, [
+            { role: "system", content: "You are a helpful assistant. Reply naturally in the user's language. Keep answers concise." },
+            ...state.messages,
+          ]);
+          state.messages.push({ role: "assistant", content: response.text });
+          state.chatHistory.push({ success: true, httpStatus: response.status, usage: response.usage });
+          addBubble("assistant", response.text);
+          state.lastProbe = { operation: "chat", httpStatus: response.status, success: true };
+          state.lastError = null;
+          setStatus(chatStatus, `وصل الرد بنجاح من ${state.selectedModel}.`, "success");
+        } catch (error) {
+          const safeMessage = safeErrorMessage(error);
+          addBubble("assistant", safeMessage, true);
+          state.lastProbe = { operation: "chat", httpStatus: error.status || null, success: false };
+          state.lastError = {
+            providerCode: error.providerCode || "",
+            providerType: error.providerType || "",
+            requestId: error.requestId || "",
+            message: safeMessage,
+            kind: error.kind || "",
+          };
+          setStatus(chatStatus, safeMessage, "error");
+        } finally {
+          state.busy = false;
+          $("#send-message").disabled = false;
+          $("#discover").disabled = false;
+          $("#clear-key").disabled = false;
+          $("#clear-chat").disabled = false;
+          updateReport();
+        }
+      }
+
+      $("#toggle-key").addEventListener("click", () => {
+        const reveal = keyInput.type === "password";
+        keyInput.type = reveal ? "text" : "password";
+        $("#toggle-key").textContent = reveal ? "إخفاء" : "إظهار";
+      });
+
+      $("#discover").addEventListener("click", discover);
+      $("#chat-form").addEventListener("submit", submitChat);
+      keyInput.addEventListener("paste", () => {
+        window.setTimeout(() => {
+          if (keyInput.value.trim()) discover();
+        }, 0);
+      });
+      $("#clear-chat").addEventListener("click", () => {
+        state.messages = [];
+        state.chatHistory = [];
+        $("#chat-log").replaceChildren();
+        setStatus(chatStatus, "تم مسح المحادثة من الصفحة.", "info");
+        updateReport();
+      });
+
+      $("#clear-key").addEventListener("click", () => {
+        keyInput.value = "";
+        state.models = [];
+        state.selectedModel = "";
+        state.messages = [];
+        state.chatHistory = [];
+        state.lastProbe = null;
+        state.lastError = null;
+        state.discoveredAt = null;
+        modelList.replaceChildren();
+        $("#chat-log").replaceChildren();
+        modelsSection.classList.add("hidden");
+        chatSection.classList.add("hidden");
+        reportSection.classList.add("hidden");
+        setStatus(connectionStatus, "تم مسح المفتاح والبيانات من الصفحة.", "success");
+      });
+
+      $("#copy-report").addEventListener("click", async () => {
+        const report = buildReport();
+        try {
+          await navigator.clipboard.writeText(report);
+          setStatus($("#copy-status"), "تم نسخ التقرير. راجعه قبل إرساله.", "success");
+        } catch {
+          $("#report").focus();
+          $("#report").select();
+          const copied = document.execCommand("copy");
+          setStatus($("#copy-status"), copied ? "تم نسخ التقرير. راجعه قبل إرساله." : "تعذر النسخ التلقائي؛ حدد التقرير وانسخه يدويًا.", copied ? "success" : "error");
+        }
+      });
+
+      window.addEventListener("pagehide", () => {
+        keyInput.value = "";
+        state.messages = [];
+        state.chatHistory = [];
+      });
+
+      window.addEventListener("beforeunload", () => {
+        keyInput.value = "";
+        state.messages = [];
+        state.chatHistory = [];
+      });
+    })();
+  </script>
+</body>
+</html>

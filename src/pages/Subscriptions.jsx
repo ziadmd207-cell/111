@@ -26,6 +26,7 @@ export default function Subscriptions() {
   const [contactEmail, setContactEmail] = useState("zeus.eduai@gmail.com");
   const [socialLinks, setSocialLinks] = useState({});
   const [loading, setLoading] = useState(true);
+  const [plansError, setPlansError] = useState("");
 
   // Modal payment state
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -54,46 +55,10 @@ export default function Subscriptions() {
         }
       } catch (err) {
         console.error("Failed to load plans:", err);
-        // Fallback default structure
-        setPlans([
-          {
-            id: "STARTER",
-            name: "STARTER",
-            price: 99,
-            period: "Month",
-            features: [
-              { en: "Personalized learning roadmap", ar: "خريطة تعلم مخصصة بالكامل لمستواك وأهدافك" },
-              { en: "AI Assistant", ar: "المساعد الذكي ZEUS رفيقك الدراسي خطوة بخطوة" },
-            ],
-            badge: "Best Value",
-          },
-          {
-            id: "PRO",
-            name: "PRO",
-            price: 199,
-            period: "Month",
-            features: [
-              { en: "Everything in STARTER", ar: "كل مميزات باقة STARTER" },
-              { en: "Interactive quizzes after every lesson", ar: "اختبارات تفاعلية بعد كل درس لتقييم فهمك" },
-              { en: "A project after every stage", ar: "مشروع عملي تطبيقي شامل بعد كل مرحلة" },
-            ],
-            badge: "Popular",
-          },
-          {
-            id: "PRIME",
-            name: "PRIME",
-            price: 399,
-            period: "Month",
-            features: [
-              { en: "Everything in PRO", ar: "كل مميزات باقة PRO" },
-              { en: "Job search/recommendations relevant to your field", ar: "بحث وتوصيات وظائف ذكية تطابق مجالك وخبرتك" },
-              { en: "Access to a community related to your field", ar: "الانضمام لمجتمع المتخصصين والزملاء في مجالك" },
-              { en: "CV functionality", ar: "أداة بناء وتحسين السيرة الذاتية الاحترافية (CV)" },
-              { en: "Portfolio functionality", ar: "أداة بناء وعرض البورتفوليو العام لمشاريعك" },
-            ],
-            badge: "Complete",
-          },
-        ]);
+        setPlans([]);
+        setPlansError(isAr
+          ? "تعذر تحميل الباقات من الخادم. لم نعرض أسعارًا قديمة؛ حاول تحديث الصفحة."
+          : "Plans could not be loaded from the server. No cached prices are shown; please refresh and try again.");
       } finally {
         try {
           const links = await api.support.socialLinks();
@@ -252,6 +217,14 @@ export default function Subscriptions() {
               >
                 {isAr ? "لوحة التحكم" : "Dashboard"} <Arrow style={{ width: 14, height: 14 }} />
               </Link>
+            ) : plansError ? (
+              <div role="alert" className="mx-auto max-w-2xl rounded-2xl border border-destructive/30 bg-destructive/10 p-6 text-center text-sm text-destructive">
+                {plansError}
+              </div>
+            ) : plans.length === 0 ? (
+              <div role="status" className="mx-auto max-w-2xl rounded-2xl border border-border/70 bg-card/70 p-6 text-center text-sm text-muted-foreground">
+                {isAr ? "لا توجد باقات متاحة حاليًا." : "No plans are available right now."}
+              </div>
             ) : (
               <Link
                 to="/login"
@@ -272,8 +245,8 @@ export default function Subscriptions() {
           </h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
             {isAr
-              ? "لمعرفة كيفية الاشتراك في زيوس برجاء التواصل معانا عبر الإيميل أو من خلال صفحات السوشيال ميديا:"
-              : "To learn how to subscribe to ZEUS, contact us by email or through our social media pages."}
+              ? "لمعرفة كيفية الاشتراك في زيوس، تواصل معنا عبر البريد الإلكتروني أو صفحات التواصل الاجتماعي. وللحصول على معلومات الدفع، تواصل معنا عبر واتساب."
+              : "To learn how to subscribe to ZEUS, contact us by email or through our social media pages. For payment information, contact us on WhatsApp."}
           </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
             {contactLinks()}

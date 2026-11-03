@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Target, Flame, Users, MessageSquare, Sparkles, TrendingUp, BookOpen } from "lucide-react";
+import { ArrowLeft, ArrowRight, Target, Flame, MessageSquare, Sparkles, TrendingUp, BookOpen } from "lucide-react";
 import { api } from "@/api/client";
 import { useI18n } from "@/lib/i18n";
 import { useProfile } from "@/lib/ProfileContext";

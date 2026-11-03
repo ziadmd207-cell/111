@@ -1,0 +1,18 @@
+{
+  "planHash": "9f8b6dea8f69a66f0c85e1ba3154050d623b90a283770f2395459d27c862edc8",
+  "phase": "standalone",
+  "recordedAtUtc": "2026-11-03T15:53:11.7592575Z",
+  "retryCount": 1,
+  "resetBaseline": false,
+  "complete": false,
+  "runningStep": "setup[0]:npm",
+  "partialOutput": "npm warn deprecated lodash.isequal@4.5.0: This package is deprecated. Use require(\u0027node:util\u0027).isDeepStrictEqual instead.\r\n",
+  "cleanupCompleted": true,
+  "result": {
+    "setupSucceeded": false,
+    "setupDurationMs": 0,
+    "setupFailureOutput": null,
+    "assertions": [],
+    "executions": []
+  }
+}

@@ -7,13 +7,14 @@ from fastapi import APIRouter, Depends, Query, Body, HTTPException
 from sqlmodel import Session, select
 from typing import Optional
 from ..core.database import get_session
-from ..core.deps import get_current_user_id, get_user_subscription_info, TIER_RANKS
+from ..core.deps import get_current_user_id, get_user_subscription_info, partner_feature_enabled, TIER_RANKS
 from ..models import (
     LearningProfile, Roadmap, Task, Lesson, LessonProgress,
     GenerationJob, Conversation, Project, CV, Notification,
     Community, CommunityMessage, User
 )
 import uuid
+import re
 from datetime import datetime
 
 router = APIRouter()
@@ -44,6 +45,12 @@ ENTITY_REQUIRED_TIERS = {
     "Community": "PRIME",
     "CommunityMessage": "PRIME",
 }
+ENTITY_PARTNER_FEATURES = {
+    "Project": "projects",
+    "CV": "cv",
+    "Community": "community",
+    "CommunityMessage": "community",
+}
 
 
 # Fields clients may never set directly (progression, ownership, tier, audit).
@@ -54,9 +61,33 @@ BLOCKED_FIELDS = {
     "updated_date", "completed_at", "quiz_passing_score", "subscription_plan",
     "subscription_status", "subscription_start", "subscription_expires",
     "google_id", "password_hash", "members",
+    "is_closed", "is_pinned",
 }
 MAX_LIMIT = 200
 MAX_BATCH = 100
+COMMUNITY_UPLOAD_PATTERN = re.compile(
+    r"^/uploads/[a-f0-9]{32}\.(?:png|jpg|jpeg|webp|gif|webm|ogg|mp3|wav|m4a)$",
+    re.IGNORECASE,
+)
+
+
+def _validate_community_message(data: dict, existing_text: str | None = None, existing_attachments: list | None = None):
+    text = data.get("text", existing_text)
+    attachments = data.get("attachments", existing_attachments) or []
+    if text is not None and (not isinstance(text, str) or len(text) > 5000):
+        raise HTTPException(status_code=400, detail="Message text must be at most 5000 characters")
+    if not isinstance(attachments, list) or len(attachments) > 5:
+        raise HTTPException(status_code=400, detail="A message can contain at most 5 attachments")
+    for attachment in attachments:
+        if not isinstance(attachment, dict) or not COMMUNITY_UPLOAD_PATTERN.fullmatch(str(attachment.get("url", ""))):
+            raise HTTPException(status_code=400, detail="Invalid community attachment")
+        kind = attachment.get("mime_type", "")
+        extension = attachment["url"].rsplit(".", 1)[-1].lower()
+        is_audio = extension in {"webm", "ogg", "mp3", "wav", "m4a"}
+        if not isinstance(kind, str) or not (kind.startswith("audio/") if is_audio else kind.startswith("image/")):
+            raise HTTPException(status_code=400, detail="Attachment type does not match its URL")
+    if not (isinstance(text, str) and text.strip()) and not attachments:
+        raise HTTPException(status_code=400, detail="A message needs text or an attachment")
 
 
 def _sanitize(data: dict) -> dict:
@@ -97,6 +128,11 @@ def _enforce_tier(entity: str, user_id: str, session: Session):
         raise HTTPException(status_code=401, detail="User not found")
 
     info = get_user_subscription_info(user, session)
+    feature = ENTITY_PARTNER_FEATURES.get(entity)
+    if info.get("partner_managed"):
+        if feature and not partner_feature_enabled(user, session, feature):
+            raise HTTPException(status_code=403, detail=f"This feature is disabled by your educational partner: {feature}.")
+        return
     user_tier = info.get("tier", "NONE")
     user_rank = TIER_RANKS.get(user_tier, 0)
     min_rank = TIER_RANKS.get(min_tier, 0)
@@ -112,6 +148,76 @@ def _enforce_tier(entity: str, user_id: str, session: Session):
             detail=msg,
             headers={"X-Required-Tier": min_tier, "X-Current-Tier": user_tier}
         )
+    if feature and not partner_feature_enabled(user, session, feature):
+        raise HTTPException(status_code=403, detail=f"This feature is disabled by your educational partner: {feature}.")
+
+
+def _enforce_lesson_tier(lesson: Lesson, user_id: str, session: Session):
+    if _is_admin(session, user_id):
+        return
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    info = get_user_subscription_info(user, session)
+    if not partner_feature_enabled(user, session, "learning"):
+        raise HTTPException(status_code=403, detail="Learning access is disabled by your educational partner.")
+    if info.get("partner_managed"):
+        return
+    user_tier = info.get("tier", "NONE")
+    if TIER_RANKS.get(user_tier, 0) < TIER_RANKS["PRO"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Feature restricted. Lessons require an active PRO plan.",
+            headers={"X-Required-Tier": "PRO", "X-Current-Tier": user_tier},
+        )
+
+
+def _can_access_stage_projects(user_id: str, session: Session) -> bool:
+    if _is_admin(session, user_id):
+        return True
+    user = session.get(User, user_id)
+    if not user:
+        return False
+    info = get_user_subscription_info(user, session)
+    if info.get("partner_managed"):
+        return partner_feature_enabled(user, session, "projects")
+    return TIER_RANKS.get(info.get("tier", "NONE"), 0) >= TIER_RANKS["PRO"]
+
+
+def _can_access_learning_content(entity: str, user_id: str, session: Session) -> bool:
+    if entity in {"Lesson", "Roadmap"}:
+        user = session.get(User, user_id)
+        if user and get_user_subscription_info(user, session).get("partner_managed"):
+            return partner_feature_enabled(user, session, "learning")
+        return _can_access_stage_projects(user_id, session)
+    return True
+
+
+def _serialize_entity(entity: str, obj, can_access_pro: bool = True):
+    if entity == "Roadmap":
+        data = obj.model_dump()
+        if not can_access_pro:
+            data["nodes"] = [
+                {**node, "resources": []} if isinstance(node, dict) else node
+                for node in (data.get("nodes") or [])
+            ]
+        return data
+    if entity != "Lesson":
+        return obj
+    data = obj.model_dump()
+    if not can_access_pro:
+        schedule_fields = {
+            "id", "roadmap_id", "node_id", "node_title", "phase", "day", "week",
+            "order", "status", "created_date", "updated_date",
+        }
+        return {key: value for key, value in data.items() if key in schedule_fields}
+    from ..services.quiz import student_question
+    data["quiz"] = [
+        student_question(question)
+        for question in (data.get("quiz") or [])
+        if isinstance(question, dict)
+    ]
+    return data
 
 
 def _owned_or_404(Model, obj_id: str, user_id: str, session: Session):
@@ -140,6 +246,9 @@ def list_entities(
         return mine[:limit]
 
     stmt = select(Model).where(Model.user_id == user_id) if hasattr(Model, "user_id") else select(Model)
+    can_access_pro = _can_access_learning_content(entity, user_id, session)
+    if entity == "Lesson" and not _can_access_stage_projects(user_id, session):
+        stmt = stmt.where(~Model.node_id.startswith("stage_project_"))
     if sort:
         desc = sort.startswith("-")
         field = sort.lstrip("-")
@@ -147,7 +256,8 @@ def list_entities(
         if col is not None:
             stmt = stmt.order_by(col.desc() if desc else col)
     stmt = stmt.limit(limit)
-    return session.exec(stmt).all()
+    rows = session.exec(stmt).all()
+    return [_serialize_entity(entity, row, can_access_pro) for row in rows]
 
 
 @router.get("/{entity}/{item_id}")
@@ -165,7 +275,11 @@ def get_entity(
         if not obj or user_id not in (obj.members or []):
             raise HTTPException(status_code=404, detail="Not found")
         return obj
-    return _owned_or_404(Model, item_id, user_id, session)
+    obj = _owned_or_404(Model, item_id, user_id, session)
+    if entity == "Lesson":
+        _enforce_lesson_tier(obj, user_id, session)
+    can_access_pro = _can_access_learning_content(entity, user_id, session)
+    return _serialize_entity(entity, obj, can_access_pro)
 
 
 @router.post("/{entity}")
@@ -180,6 +294,17 @@ def create_entity(
     _require_community_admin(entity, user_id, session)
 
     data = _sanitize(data)
+    if entity == "CommunityMessage":
+        _validate_community_message(data)
+        community = session.get(Community, data.get("community_id"))
+        if not community:
+            raise HTTPException(status_code=404, detail="Community not found")
+        if not _is_admin(session, user_id):
+            if user_id not in (community.members or []):
+                raise HTTPException(status_code=403, detail="You are not a member of this community")
+            if community.is_closed:
+                raise HTTPException(status_code=403, detail="This community is closed")
+        data["is_pinned"] = False
     if hasattr(Model, "user_id"):
         data["user_id"] = user_id
     if "id" not in data:
@@ -207,16 +332,24 @@ def update_entity(
     Model = _model_for(entity)
     _enforce_tier(entity, user_id, session)
     _require_community_admin(entity, user_id, session)
+    if entity == "CommunityMessage" and not _is_admin(session, user_id) and "is_pinned" in data:
+        raise HTTPException(status_code=403, detail="Only admins can pin community messages")
     obj = _owned_or_404(Model, item_id, user_id, session)
+    if entity == "Lesson":
+        _enforce_lesson_tier(obj, user_id, session)
 
-    for k, v in _sanitize(data).items():
+    updates = _sanitize(data)
+    if entity == "CommunityMessage":
+        _validate_community_message(updates, obj.text, obj.attachments)
+    for k, v in updates.items():
         if hasattr(obj, k):
             setattr(obj, k, v)
     obj.updated_date = datetime.utcnow()
     session.add(obj)
     session.commit()
     session.refresh(obj)
-    return obj
+    can_access_pro = _can_access_learning_content(entity, user_id, session)
+    return _serialize_entity(entity, obj, can_access_pro)
 
 
 @router.post("/{entity}/bulkCreate")
@@ -237,6 +370,17 @@ def bulk_create(
         if not isinstance(item, dict):
             raise HTTPException(status_code=400, detail="Invalid batch item")
         item = _sanitize(item)
+        if entity == "CommunityMessage":
+            _validate_community_message(item)
+            community = session.get(Community, item.get("community_id"))
+            if not community:
+                raise HTTPException(status_code=404, detail="Community not found")
+            if not _is_admin(session, user_id):
+                if user_id not in (community.members or []):
+                    raise HTTPException(status_code=403, detail="You are not a member of this community")
+                if community.is_closed:
+                    raise HTTPException(status_code=403, detail="This community is closed")
+            item["is_pinned"] = False
         if hasattr(Model, "user_id"):
             item["user_id"] = user_id
         if "id" not in item:
@@ -252,7 +396,8 @@ def bulk_create(
     session.commit()
     for o in objs:
         session.refresh(o)
-    return objs
+    can_access_pro = _can_access_learning_content(entity, user_id, session)
+    return [_serialize_entity(entity, obj, can_access_pro) for obj in objs]
 
 
 @router.post("/{entity}/updateMany")
@@ -409,7 +554,19 @@ def filter_entities(
         mine = [c for c in all_c if user_id in (c.members or [])]
         return mine[:limit]
 
-    stmt = select(Model).where(Model.user_id == user_id) if hasattr(Model, "user_id") else select(Model)
+    if entity == "CommunityMessage" and not _is_admin(session, user_id):
+        stmt = select(Model)
+    else:
+        stmt = select(Model).where(Model.user_id == user_id) if hasattr(Model, "user_id") else select(Model)
+    if entity == "CommunityMessage" and not _is_admin(session, user_id):
+        communities = session.exec(select(Community)).all()
+        member_community_ids = [community.id for community in communities if user_id in (community.members or [])]
+        if not member_community_ids:
+            return []
+        stmt = stmt.where(Model.community_id.in_(member_community_ids))
+    can_access_pro = _can_access_learning_content(entity, user_id, session)
+    if entity == "Lesson" and not can_access_pro:
+        stmt = stmt.where(~Model.node_id.startswith("stage_project_"))
     for k, v in filt.items():
         if k in ("user_id",):
             continue
@@ -430,4 +587,5 @@ def filter_entities(
         stmt = stmt.order_by(Model.created_date.desc())
 
     stmt = stmt.limit(limit)
-    return session.exec(stmt).all()
+    rows = session.exec(stmt).all()
+    return [_serialize_entity(entity, row, can_access_pro) for row in rows]

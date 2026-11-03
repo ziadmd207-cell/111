@@ -18,6 +18,10 @@ sdist/
 develop-eggs/
 .installed.cfg
 lib/
+!src/lib/
+src/lib/*
+!src/lib/tier.js
+!src/lib/tier.test.js
 lib64/
 .pyo
 
@@ -55,6 +59,8 @@ pgdata/
 
 # ── Node / Frontend ──────────────────────────────────────────────────────────
 node_modules/
+test-results/
+playwright-report/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -23,10 +23,13 @@ class AdminSetting(SQLModel, table=True):
 
     # AI Model API configuration
     active_ai_provider: str = Field(default="auto")  # Legacy global override; task routes now control provider selection.
+    groq_api_key: Optional[str] = None
+    groq_model: Optional[str] = Field(default="openai/gpt-oss-20b")
     gemini_api_key: Optional[str] = None
-    gemini_model: Optional[str] = Field(default="gemini-2.5-flash")
+    gemini_model: Optional[str] = Field(default="gemini-3.8-flash")
     openai_api_key: Optional[str] = None
     openai_model: Optional[str] = Field(default="gpt-4o-mini")
+    ai_task_routes: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     # YouTube API configuration (Only external service actively used)
     youtube_api_key: Optional[str] = None
     facebook_url: Optional[str] = Field(default="https://www.facebook.com/profile.php?id=61593983652683&mibextid=ZbWKwL")

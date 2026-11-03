@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Brain, Map, Target, Gauge, ArrowLeft, ArrowRight, Check, Loader2, GitCompare } from "lucide-react";
+import { Brain, Map, Target, Gauge, ArrowLeft, ArrowRight, Check, Loader2, GitCompare, BookOpen } from "lucide-react";
 import { api } from "@/api/client";
+import { useAuth } from "@/lib/AuthContext";
 import { useI18n } from "@/lib/i18n";
 import { useProfile } from "@/lib/ProfileContext";
 import Logo from "@/components/zeus/Logo";
@@ -9,6 +10,8 @@ import LanguageToggle from "@/components/zeus/LanguageToggle";
 import ThemeToggle from "@/components/zeus/ThemeToggle";
 import ChatPanel from "@/components/zeus/ChatPanel";
 import DnaSummary from "@/components/zeus/onboarding/DnaSummary";
+import CareerFieldExplorer from "@/components/zeus/onboarding/CareerFieldExplorer";
+import { findCareerField } from "@/data/careerFields";
 import RoadmapReveal from "@/components/zeus/onboarding/RoadmapReveal";
 import { toast } from "@/components/ui/use-toast";
 import { ZEUS_IMAGES, withImageFallback } from "@/lib/zeus-images";
@@ -23,11 +26,12 @@ const STEPS = [
 
 const welcomeMessage = (isAr) =>
   isAr
-    ? "أهلاً، أنا زيوس ☺️⚡️ احكيلي: محتار بين إيه، أو نفسك تتعلم إيه وتوصل لإيه؟"
-    : "Hello, I'm ZEUS ☺️⚡️ Tell me: what are you unsure about, or what would you like to learn and achieve?";
+    ? "أهلاً، أنا ZEUS ورفيقك أثناء التعلّم ☺️ حابب تتعلم إيه أو هدفك إيه؟ ولو محتار بين مجالات أو عندك مشكلة أو حاجة واقفة معاك، احكيلي عنها."
+    : "Hi, I'm ZEUS, your learning companion ☺️ What would you like to learn or achieve? If you're unsure between fields, facing a problem, or feeling stuck, tell me about it.";
 
 export default function Onboarding() {
   const { t, lang, dir } = useI18n();
+  const { user } = useAuth();
   const { profile, loading, createProfile, updateProfile } = useProfile();
   const nav = useNavigate();
   const isAr = lang === "ar";
@@ -45,8 +49,48 @@ export default function Onboarding() {
   const [roadmapPreview, setRoadmapPreview] = useState(null);
   const [skillsText, setSkillsText] = useState("");
   const [fieldComparison, setFieldComparison] = useState(null);
+  const [fieldGuideSource, setFieldGuideSource] = useState("");
+  const [fieldGuideQuery, setFieldGuideQuery] = useState("");
+  const [fieldGuideSelectedId, setFieldGuideSelectedId] = useState("");
   const [building, setBuilding] = useState(false);
   const [bootError, setBootError] = useState(false);
+  const [partnerContext, setPartnerContext] = useState(null);
+  const [partnerContextLoading, setPartnerContextLoading] = useState(user?.role === "partner_student");
+  const [partnerContextError, setPartnerContextError] = useState("");
+
+  useEffect(() => {
+    if (user?.role !== "partner_student") {
+      setPartnerContext(null);
+      setPartnerContextLoading(false);
+      return undefined;
+    }
+    let active = true;
+    setPartnerContextLoading(true);
+    setPartnerContextError("");
+    api.partners.studentLearningContext()
+      .then((context) => {
+        if (!active) return;
+        setPartnerContext(context);
+        if (!context.ready) {
+          setPartnerContextError(isAr
+            ? "الدكتور لسه ماحددش المسار والمهارات. اطلب منه يكمل إعدادهم قبل ما تبدأ."
+            : "Your instructor has not set the learning path and skills yet. Ask them to finish setup before you begin.");
+        }
+      })
+      .catch((contextError) => {
+        if (active) {
+          setPartnerContextError(contextError.message || (isAr ? "تعذر تحميل إعدادات التعلم." : "Could not load learning setup."));
+        }
+      })
+      .finally(() => { if (active) setPartnerContextLoading(false); });
+    return () => { active = false; };
+  }, [user?.id, user?.role, isAr]);
+
+  const partnerWelcomeMessage = (context) => (
+    isAr
+      ? `أهلاً، أنا ZEUS. الدكتور حدد لك مسار ${context.track}. هسألك الأول عن الوقت المناسب للمذاكرة، وبعدها عن خبرتك والمهارات اللي تعرفها عشان أظبط الخريطة على مستواك.`
+      : `Hi, I'm ZEUS. Your instructor assigned you to ${context.track}. I'll ask about your study time, then your experience and existing skills, so I can tailor your roadmap to your level.`
+  );
 
   // The companion is always Zeus — no naming step. First visit auto-creates
   // the profile and starts the discovery chat immediately.
@@ -54,24 +98,47 @@ export default function Onboarding() {
   const initializedConversationProfileRef = React.useRef(null);
   const loadingConversationProfileRef = React.useRef(null);
   useEffect(() => {
-    if (loading) return;
+    if (loading || partnerContextLoading) return;
+    const usesPartnerIntake = user?.role === "partner_student"
+      && partnerContext?.ready
+      && partnerContext.learning_mode !== "student_discovery";
+    if (user?.role === "partner_student" && partnerContext && !partnerContext.ready) return;
+    if (usesPartnerIntake && partnerContext.has_roadmap) {
+      nav("/app", { replace: true });
+      return;
+    }
     // Fresh account: create profile + first conversation in one go
     if (!profile) {
       (async () => {
         if (startedRef.current) return;
         startedRef.current = true;
         try {
-          const p = await createProfile({ companion_name: "Zeus", onboarding_step: "discovery" });
+          const assignedSkills = partnerContext?.skills || [];
+          const p = await createProfile({
+            companion_name: "Zeus",
+            ...(usesPartnerIntake ? {
+              goal: partnerContext.track,
+              target_skills: assignedSkills,
+              current_level: "beginner",
+              known_skills: [],
+              onboarding_step: "partner_intake",
+            } : { onboarding_step: "discovery" }),
+          });
           if (!p) throw new Error("profile");
           loadingConversationProfileRef.current = p.id;
+          const initialMessage = usesPartnerIntake
+            ? partnerWelcomeMessage(partnerContext)
+            : welcomeMessage(isAr);
           const convo = await api.entities.Conversation.create({
-            type: "discovery", companion_name: "Zeus",
-            messages: [{ role: "assistant", content: welcomeMessage(isAr), ts: new Date().toISOString() }]
+            type: usesPartnerIntake ? "partner_intake" : "discovery",
+            companion_name: "Zeus",
+            messages: [{ role: "assistant", content: initialMessage, ts: new Date().toISOString() }]
           });
           initializedConversationProfileRef.current = p.id;
           setConversation(convo);
-          setMessages(convo.messages);
-          setStep("discovery");
+          setMessages(convo.messages || []);
+          if (usesPartnerIntake) setKeySkills(assignedSkills);
+          setStep(usesPartnerIntake ? "partner_intake" : "discovery");
         } catch {
           // Never leave a blank screen: surface the failure with a retry.
           startedRef.current = false;
@@ -83,12 +150,62 @@ export default function Onboarding() {
       })();
       return;
     }
+    if (profile.onboarding_step === "done") { nav("/app", { replace: true }); return; }
+    if (usesPartnerIntake && !partnerContext.has_roadmap) {
+      const assignedSkills = partnerContext.skills || [];
+      setStep("partner_intake");
+      setKeySkills(assignedSkills);
+      if (
+        profile.onboarding_step !== "partner_intake"
+        || profile.goal !== partnerContext.track
+        || JSON.stringify(profile.target_skills || []) !== JSON.stringify(assignedSkills)
+      ) {
+        updateProfile({
+          goal: partnerContext.track,
+          target_skills: assignedSkills,
+          current_level: profile.current_level || "beginner",
+          onboarding_step: "partner_intake",
+        }).catch((error) => {
+          console.error("Failed to prepare instructor-guided learning:", error);
+          setPartnerContextError(isAr
+            ? "تعذر تحميل إعدادات مسارك. حدّث الصفحة أو تواصل مع الدكتور."
+            : "Could not prepare your assigned learning path. Refresh or contact your instructor.");
+        });
+      }
+      if (initializedConversationProfileRef.current !== profile.id
+        && loadingConversationProfileRef.current !== profile.id) {
+        loadingConversationProfileRef.current = profile.id;
+        (async () => {
+          try {
+            const existing = await api.entities.Conversation.filter({ type: "partner_intake" }, "-created_date", 1);
+            const convo = existing[0] || await api.entities.Conversation.create({
+              type: "partner_intake",
+              companion_name: "Zeus",
+              messages: [{
+                role: "assistant",
+                content: partnerWelcomeMessage(partnerContext),
+                ts: new Date().toISOString(),
+              }],
+            });
+            initializedConversationProfileRef.current = profile.id;
+            setConversation(convo);
+            setMessages(convo.messages || []);
+            setBootError(false);
+          } catch (error) {
+            console.error("Failed to initialize instructor-guided conversation:", error);
+            setBootError(true);
+          } finally {
+            loadingConversationProfileRef.current = null;
+          }
+        })();
+      }
+      return;
+    }
     // Legacy "naming" step or custom names migrate to fixed "Zeus"
     let s = profile.onboarding_step || "discovery";
     if (s === "naming") s = "discovery";
     setStep(s);
     setBootError(false);
-    if (profile.onboarding_step === "done") { nav("/app", { replace: true }); return; }
     if (profile.companion_name !== "Zeus") {
       updateProfile({ companion_name: "Zeus" }).catch(() => {});
     }
@@ -114,35 +231,63 @@ export default function Onboarding() {
         }
       })();
     }
-  }, [profile?.id, profile?.onboarding_step, loading, nav]);
+  }, [profile?.id, profile?.onboarding_step, profile?.goal, profile?.target_skills, loading, partnerContextLoading, partnerContext, user?.id, user?.role, nav, isAr]);
 
   const goto = async (nextStep, patch = {}) => {
-    if (profile) await updateProfile({ onboarding_step: nextStep, ...patch });
-    setStep(nextStep);
-  };
-
-  const skipToDashboard = async () => {
-    if (profile) await updateProfile({ onboarding_step: "done" });
-    nav("/app", { replace: true });
+    try {
+      if (profile) await updateProfile({ onboarding_step: nextStep, ...patch });
+      setStep(nextStep);
+    } catch (error) {
+      console.error(`Failed to save onboarding step "${nextStep}":`, error);
+      toast({
+        title: isAr ? "تعذر حفظ تقدمك" : "Could not save your progress",
+        description: isAr ? "بياناتك لم تتغير. حاول مرة أخرى." : "Your progress was not changed. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   // ---------- Discovery (interactive choices, no repeat, auto-advance) ----------
   const inFlightRef = React.useRef(false);
-  const sendDiscovery = async (text, retry = false) => {
+  const sendDiscovery = async (text, retry = false, profilePatch = {}, images = []) => {
     if (inFlightRef.current || typing) return;
     inFlightRef.current = true;
-    const userMsg = { role: "user", content: text, ts: new Date().toISOString() };
+    const userMsg = { role: "user", content: text, images, ts: new Date().toISOString() };
     const history = retry ? messages.filter((message) => !message.retryable) : messages;
     const next = retry ? history : [...history, userMsg];
+    const discoveryProfile = { ...(profile || {}), ...profilePatch };
     setMessages(next);
     setChatBusy(true);
     setTyping(true);
+    if (Object.keys(profilePatch).length) {
+      try {
+        await updateProfile(profilePatch);
+      } catch (error) {
+        console.error("Failed to save the selected discovery field:", error);
+        setMessages(messages);
+        setChatBusy(false);
+        setTyping(false);
+        inFlightRef.current = false;
+        toast({
+          title: isAr ? "تعذر حفظ اختيارك" : "Could not save your selection",
+          description: isAr ? "حاول اختيار المجال مرة أخرى." : "Please try selecting the field again.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     try {
-      const res = await api.functions.invoke("discoveryChat", {
-        messages: next.map((m) => ({ role: m.role, content: m.content })),
-        profile: profile, companionName: companionName, lang
+      const partnerIntake = user?.role === "partner_student"
+        && partnerContext?.learning_mode === "doctor_assigned";
+      const res = await api.functions.invoke(partnerIntake ? "partnerGuidedIntake" : "discoveryChat", {
+        messages: next.map((m) => ({ role: m.role, content: m.content, images: m.images || [] })),
+        profile: discoveryProfile, companionName: companionName, lang
       }, { timeoutMs: 65000 });
       const data = res.data || res;
+      const responseProfile = {
+        ...(data.profile && typeof data.profile === "object" ? data.profile : {}),
+        ...profilePatch,
+      };
       // Incremental DNA: accumulate profile EVERY turn — even when the reply
       // itself failed — so no answer is ever lost or re-asked.
       const persistDiscoveryProfile = async (patch) => {
@@ -181,7 +326,7 @@ export default function Onboarding() {
         setMessages([...withUserOnly, { role: "assistant", content: errorMessage, ts: new Date().toISOString(), retryable: true }]);
         setTyping(false);
         try {
-          await persistDiscoveryProfile(data.profile);
+          await persistDiscoveryProfile(responseProfile);
           await api.entities.Conversation.update(conversation.id, { messages: withUserOnly });
         } catch (error) {
           console.error("Failed to save discovery response:", error);
@@ -201,7 +346,7 @@ export default function Onboarding() {
       // Incremental DNA: accumulate profile every turn so nothing is lost
       // even if the final response patch is sparse.
       try {
-        await persistDiscoveryProfile(data.profile);
+        await persistDiscoveryProfile(responseProfile);
         const low = text.toLowerCase();
         if (low.includes("مجان") || low.includes("free") || low.includes("يوتيوب فقط")) {
           await updateProfile({ video_preference: "free" });
@@ -212,16 +357,28 @@ export default function Onboarding() {
         console.error("Failed to save discovery profile:", error);
         toast({ title: isAr ? "تعذر حفظ بعض بياناتك" : "Some profile details could not be saved", description: isAr ? "رد المحادثة محفوظ على الشاشة؛ حاول تحديث الصفحة لاحقًا." : "Your chat reply is still visible; try refreshing later.", variant: "destructive" });
       }
-      if (data.isComplete && data.profile) {
-        const clean = Object.fromEntries(Object.entries(data.profile).filter(([, v]) => v !== null && v !== undefined && v !== ""));
-        // Preserve video_preference if LLM returned it, else keep existing
+      if (data.isComplete && Object.keys(responseProfile).length) {
+        const clean = Object.fromEntries(Object.entries(responseProfile).filter(([, v]) => v !== null && v !== undefined && v !== ""));
         try {
-          await updateProfile({ ...clean, onboarding_step: "dna" });
+          if (partnerIntake) {
+            const assignedSkills = partnerContext?.skills || [];
+            await updateProfile({
+              ...clean,
+              goal: partnerContext.track,
+              target_skills: assignedSkills,
+              onboarding_step: "assessment",
+            });
+            setKeySkills(assignedSkills);
+            setStep("assessment");
+          } else {
+            await updateProfile({ ...clean, onboarding_step: "dna" });
+            setStep("dna");
+          }
         } catch (error) {
           console.error("Failed to save completed discovery profile:", error);
           toast({ title: isAr ? "تعذر حفظ التحليل" : "Could not save your analysis", variant: "destructive" });
+          return;
         }
-        setStep("dna");
       }
     } catch (e) {
       const timedOut = /timed out|timeout|abort/i.test(e?.message || "");
@@ -269,16 +426,19 @@ export default function Onboarding() {
 
   useEffect(() => { if (step === "goal") loadGoals(); }, [step, loadGoals]);
 
-  const pickGoal = async (goal) => {
+  const pickGoal = async (goal, fromFieldGuide = false) => {
     // Use per-goal key_skills (fixes Backend showing HTML/CSS).
     // Guarantee: assessment NEVER opens with zero sliders.
     setTyping(true);
     let skillsForGoal = [];
     const matched = recs?.recommendations?.find((r) => r.goal === goal);
-    if (matched?.key_skills?.length) {
+    const fieldInfo = fromFieldGuide ? findCareerField(goal) : null;
+    if (fieldInfo) {
+      skillsForGoal = fieldInfo.skills[isAr ? "ar" : "en"].split(/[،,]/).map((skill) => skill.trim()).filter(Boolean).slice(0, 8);
+    } else if (matched?.key_skills?.length) {
       skillsForGoal = matched.key_skills;
-    } else if (matched?.tools?.length) {
-      skillsForGoal = matched.tools.slice(0, 6);
+    } else if (matched?.skills?.length) {
+      skillsForGoal = matched.skills.slice(0, 8);
     } else if (Array.isArray(profile?.target_skills) && profile.target_skills.length) {
       skillsForGoal = profile.target_skills.slice(0, 8);
     } else {
@@ -292,8 +452,17 @@ export default function Onboarding() {
       return;
     }
     setKeySkills(skillsForGoal);
-    await updateProfile({ goal, goal_recommendations: recs?.recommendations || [], onboarding_step: "assessment" });
-    setStep("assessment");
+    try {
+      await updateProfile({ goal, goal_recommendations: recs?.recommendations || [], onboarding_step: "assessment" });
+      setStep("assessment");
+    } catch (error) {
+      console.error("Failed to save the selected learning path:", error);
+      toast({
+        title: isAr ? "تعذر حفظ المسار" : "Could not save your learning path",
+        description: isAr ? "اختيارك ما اتحفظش. حاول تاني." : "Your selection was not saved. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   // ---------- Assessment ----------
@@ -313,8 +482,17 @@ export default function Onboarding() {
       : keySkills.map((s) => ({ skill: s, level: lv[s] ?? 50 }));
     const profileUpdate = { skill_graph: graph, onboarding_step: "roadmap" };
     if (skillsText.trim()) profileUpdate.strengths = skillsText.trim();
-    await updateProfile(profileUpdate);
-    setStep("roadmap");
+    try {
+      await updateProfile(profileUpdate);
+      setStep("roadmap");
+    } catch (error) {
+      console.error("Failed to save the skill assessment:", error);
+      toast({
+        title: isAr ? "تعذر حفظ التقييم" : "Could not save your assessment",
+        description: isAr ? "إجاباتك ما اتحفظتش؛ حاول مرة أخرى." : "Your assessment was not saved. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   // ---------- Roadmap ----------
@@ -407,11 +585,14 @@ export default function Onboarding() {
     }
   };
 
-  if (loading) {
+  if (loading || partnerContextLoading) {
     return <div className="fixed inset-0 flex items-center justify-center"><div className="w-9 h-9 border-4 border-zeus-gold/30 border-t-zeus-gold rounded-full animate-spin" /></div>;
   }
 
   const stepIndex = STEPS.findIndex((s) => s.key === step);
+  const partnerSetupMissing = user?.role === "partner_student"
+    && partnerContext
+    && !partnerContext.ready;
 
   return (
     <div className="min-h-screen flex flex-col overflow-x-hidden" dir={dir}>
@@ -420,16 +601,13 @@ export default function Onboarding() {
           <Logo size={30} />
         </span>
         <div className="flex items-center gap-3">
-          <button onClick={skipToDashboard} className="text-xs text-muted-foreground hover:text-zeus-brightgold transition px-3 py-1.5 rounded-full border border-border/40 hover:border-zeus-gold/40">
-            {isAr ? "تخطّي للوحة التحكم" : "Skip to dashboard"}
-          </button>
           <LanguageToggle />
           <ThemeToggle />
         </div>
       </header>
 
       {/* Step indicator */}
-      <div className="px-5 py-4 border-b border-border/40">
+      {!fieldGuideSource && step !== "partner_intake" && <div className="px-5 py-3 border-b border-border/40 bg-card/20">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           {STEPS.map((s, i) => {
             const Icon = s.icon;
@@ -439,7 +617,7 @@ export default function Onboarding() {
               <div key={s.key} className="flex items-center flex-1 last:flex-none">
                 <div className="flex flex-col items-center gap-1.5">
                   <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-sm font-bold transition ${
-                    active ? "bg-zeus-gold text-zeus-midnight shadow-gold scale-110" : done ? "bg-zeus-gold/20 text-zeus-brightgold" : "bg-secondary/50 text-muted-foreground"
+                    active ? "bg-zeus-gold/15 text-zeus-brightgold ring-1 ring-zeus-gold/40" : done ? "bg-zeus-gold/15 text-zeus-brightgold" : "bg-secondary/40 text-muted-foreground"
                   }`}>
                     {done ? <Check style={{ width: 16, height: 16 }} /> : <Icon style={{ width: 16, height: 16 }} />}
                   </div>
@@ -450,10 +628,67 @@ export default function Onboarding() {
             );
           })}
         </div>
-      </div>
+      </div>}
 
       <main className="flex-1 flex items-center justify-center px-5 py-8">
-        <div className="w-full max-w-2xl">
+        <div className={`w-full ${fieldGuideSource || (step === "discovery" && fieldComparison) ? "max-w-6xl" : "max-w-2xl"}`}>
+          {partnerContextError ? (
+            <div role="alert" className="zeus-glass space-y-4 rounded-2xl border border-amber-400/30 p-6 text-center">
+              <p className="text-sm text-amber-200">{partnerContextError}</p>
+              <button type="button" onClick={() => window.location.reload()} className="rounded-xl border border-border/60 px-4 py-2 text-xs font-semibold">
+                {isAr ? "إعادة المحاولة" : "Retry"}
+              </button>
+            </div>
+          ) : partnerSetupMissing ? (
+            <div role="alert" className="zeus-glass space-y-3 rounded-2xl border border-amber-400/30 p-6 text-center">
+              <p className="font-semibold text-amber-200">{isAr ? "مسارك التعليمي لم يُجهّز بعد" : "Your learning path is not ready yet"}</p>
+              <p className="text-sm text-muted-foreground">{isAr ? "الدكتور أو مسؤول الجهة يحتاج إلى تحديد المسار والمهارات قبل أن تبدأ. تواصل معهم ثم أعد تحميل الصفحة." : "Your instructor or institution administrator needs to configure your track and skills before you can begin. Contact them, then reload this page."}</p>
+            </div>
+          ) : fieldGuideSource ? (
+            <CareerFieldExplorer
+              isAr={isAr}
+              source={fieldGuideSource}
+              onBack={() => setFieldGuideSource("")}
+              query={fieldGuideQuery}
+              onQueryChange={setFieldGuideQuery}
+              selectedId={fieldGuideSelectedId}
+              onSelectedChange={setFieldGuideSelectedId}
+              onChoose={(goal) => {
+                setFieldGuideSource("");
+                void pickGoal(goal, true);
+              }}
+            />
+          ) : (
+            <>
+          {step === "partner_intake" && (
+            <section className="space-y-4">
+              <div className="text-center">
+                <p className="text-xs font-semibold text-zeus-gold">{isAr ? "إعداد مسارك مع الدكتور" : "Instructor-guided setup"}</p>
+                <h1 className="mt-1 font-heading text-xl font-extrabold">{partnerContext?.track}</h1>
+                {partnerContext?.instructions && <p className="mx-auto mt-2 max-w-xl whitespace-pre-wrap text-xs text-muted-foreground">{partnerContext.instructions}</p>}
+                <p className="mt-2 text-xs text-muted-foreground">{isAr ? "هسألك عن وقتك وخبرتك الحالية فقط، وبعدها نحدد مهاراتك ونبني خريطتك." : "I'll ask only about your schedule and existing experience. Then we'll check your skills and build your roadmap."}</p>
+              </div>
+              {bootError && !conversation ? (
+                <div className="zeus-glass rounded-2xl p-6 text-center">
+                  <p className="mb-4 text-sm text-muted-foreground">{isAr ? "تعذر بدء المحادثة الموجهة." : "Could not start the guided conversation."}</p>
+                  <button type="button" onClick={() => window.location.reload()} className="rounded-xl border border-border/60 px-4 py-2 text-xs">{isAr ? "إعادة المحاولة" : "Retry"}</button>
+                </div>
+              ) : (
+                <div className="zeus-glass flex h-[58vh] min-h-96 flex-col rounded-2xl p-4 sm:h-[60vh] sm:p-5">
+                  <div className="mb-3 flex items-center gap-3 border-b border-border/60 pb-3">
+                    <img src={ZEUS_IMAGES.avatar} alt="Zeus" className="h-10 w-10 shrink-0 rounded-full object-cover object-top" onError={withImageFallback} />
+                    <div><p className="font-heading font-bold">ZEUS</p><p className="text-xs text-muted-foreground">{isAr ? "أسئلة قصيرة لتخصيص خريطتك" : "A few questions to tailor your roadmap"}</p></div>
+                  </div>
+                  <div className="min-h-0 flex-1">
+                    <ChatPanel messages={messages} onSend={(message) => sendDiscovery(message)} disabled={!conversation || chatBusy} onRetry={() => {
+                      const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+                      if (lastUserMessage) sendDiscovery(lastUserMessage.content, true);
+                    }} typing={typing} placeholder={isAr ? "اكتب إجابتك..." : "Type your answer..."} companionName="Zeus" t={t} lang={lang} />
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
           {step === "discovery" && bootError && !conversation && (
             <div className="zeus-glass p-8 text-center animate-fade-up">
               <p className="text-muted-foreground mb-4 text-sm">{isAr ? "مقدرتش أبدأ المحادثة. اتأكد إن السيرفر شغال وحاول تاني." : "Couldn't start the chat. Make sure the server is running and retry."}</p>
@@ -464,21 +699,26 @@ export default function Onboarding() {
           )}
               {step === "discovery" && !bootError && (
             <>
-            <div className="zeus-glass p-4 sm:p-5 h-[58vh] sm:h-[60vh] flex flex-col">
+                <div className={fieldComparison ? "grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,.85fr)] lg:items-start" : ""}>
+                <div className="zeus-glass p-4 sm:p-5 h-[58vh] sm:h-[60vh] flex flex-col">
               <div className="mb-3 pb-3 border-b border-border/60 flex items-center gap-3">
                 <img src={ZEUS_IMAGES.avatar} alt="Zeus" className="w-10 h-10 rounded-full object-cover object-top shrink-0" onError={withImageFallback} />
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="font-heading font-bold text-lg">{companionName || t("onb.name.default")} — {isAr ? "رفيقك في التعلّم" : "Your Learning Companion"}</div>
                   <div className="text-xs text-muted-foreground">{isAr ? "محادثة طبيعية عشان أفهمك" : "A natural conversation to understand you"}</div>
                 </div>
+                <button type="button" onClick={() => setFieldGuideSource("discovery")} disabled={!conversation || chatBusy} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border border-border/70 px-3 text-xs font-medium text-muted-foreground transition hover:bg-secondary/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={isAr ? "استكشف المجالات" : "Explore fields"}>
+                  <BookOpen className="h-4 w-4" />
+                  <span className="hidden sm:inline">{isAr ? "دليل المجالات" : "Field guide"}</span>
+                </button>
               </div>
-              <div className="flex-1 min-h-0"><ChatPanel messages={messages} onSend={sendDiscovery} disabled={!conversation || chatBusy} onRetry={() => {
+              <div className="flex-1 min-h-0"><ChatPanel messages={messages} onSend={(text, images) => sendDiscovery(text, false, {}, images)} disabled={!conversation || chatBusy} onRetry={() => {
                 const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
-                if (lastUserMessage) sendDiscovery(lastUserMessage.content, true);
+                if (lastUserMessage) sendDiscovery(lastUserMessage.content, true, {}, lastUserMessage.images || []);
               }} typing={typing} placeholder={isAr ? "اكتب ردك..." : "Type your reply..."} companionName={companionName} t={t} lang={lang} /></div>
             </div>
             {fieldComparison && (
-              <div className="mt-4 max-h-[30vh] overflow-y-auto space-y-3">
+              <div className="mt-4 max-h-[45vh] overflow-y-auto space-y-3 rounded-2xl border border-border/70 bg-card/60 p-3 sm:p-4 lg:max-h-[60vh]">
                 <div className="text-xs font-semibold uppercase tracking-wide text-zeus-brightgold flex items-center gap-1.5">
                   <GitCompare style={{ width: 13, height: 13 }} /> {isAr ? "مقارنة المجالات" : "Field Comparison"}
                 </div>
@@ -488,43 +728,47 @@ export default function Onboarding() {
                     {f.description && <p className="text-xs text-muted-foreground mb-2">{f.description}</p>}
                     {f.difficulty && <p className="text-xs mb-1.5"><span className="font-semibold text-zeus-brightgold">{isAr ? "الصعوبة: " : "Difficulty: "}</span><span className="text-muted-foreground">{f.difficulty}</span></p>}
                     {f.daily_tasks && <p className="text-xs mb-2"><span className="font-semibold">{isAr ? "المهام اليومية: " : "Daily Tasks: "}</span><span className="text-muted-foreground">{f.daily_tasks}</span></p>}
-                    {f.personality_fit && <p className="text-xs mb-2"><span className="font-semibold text-zeus-brightgold">{isAr ? "نوع الشخص المناسب: " : "Personality Fit: "}</span><span className="text-muted-foreground">{f.personality_fit}</span></p>}
                     {f.job_titles?.length > 0 && <div className="mb-2"><span className="text-[10px] font-semibold text-muted-foreground block mb-1">{isAr ? "الوظائف" : "Job Titles"}</span><div className="flex flex-wrap gap-1">{f.job_titles.map((j, k) => <span key={k} className="px-2 py-0.5 rounded-full bg-zeus-gold/10 text-zeus-brightgold text-[10px]">{j}</span>)}</div></div>}
-                    {f.specializations?.length > 0 && <div className="mb-2"><span className="text-[10px] font-semibold text-muted-foreground block mb-1">{isAr ? "تخصصات جوه المجال" : "Specializations"}</span><div className="flex flex-wrap gap-1">{f.specializations.map((item, k) => <span key={k} className="px-2 py-0.5 rounded-full bg-secondary/40 text-[10px]">{item}</span>)}</div></div>}
-                    {f.workplaces?.length > 0 && <div className="mb-2"><span className="text-[10px] font-semibold text-muted-foreground block mb-1">{isAr ? "أماكن الشغل المعتادة" : "Typical workplaces"}</span><div className="flex flex-wrap gap-1">{f.workplaces.map((item, k) => <span key={k} className="px-2 py-0.5 rounded-full bg-secondary/40 text-[10px]">{item}</span>)}</div></div>}
-                    {f.market_outlook && <p className="text-xs mb-2"><span className="font-semibold text-zeus-brightgold">{isAr ? "صورة عامة عن الطلب: " : "General market outlook: "}</span><span className="text-muted-foreground">{f.market_outlook}</span></p>}
                     {f.skills?.length > 0 && <div className="mb-2"><span className="text-[10px] font-semibold text-muted-foreground block mb-1">{isAr ? "المهارات" : "Skills"}</span><div className="flex flex-wrap gap-1">{f.skills.map((s, k) => <span key={k} className="px-2 py-0.5 rounded-full bg-secondary/40 text-[10px]">{s}</span>)}</div></div>}
-                    {f.tools?.length > 0 && <div className="mb-2"><span className="text-[10px] font-semibold text-muted-foreground block mb-1">{isAr ? "الأدوات" : "Tools"}</span><div className="flex flex-wrap gap-1">{f.tools.map((s, k) => <span key={k} className="px-2 py-0.5 rounded-full bg-secondary/40 text-[10px]">{s}</span>)}</div></div>}
                     {f.example_projects?.length > 0 && (
                       <div className="mb-2 p-2.5 rounded-xl bg-zeus-gold/5 border border-zeus-gold/15">
                         <span className="text-[10px] font-bold text-zeus-brightgold block mb-1">{isAr ? "مثال مشروع حقيقي" : "Real Project Example"}</span>
                         {f.example_projects.map((p, k) => <p key={k} className="text-[11px] text-muted-foreground mb-0.5">• {p}</p>)}
                       </div>
                     )}
-                    {f.growth_opportunities && <p className="text-xs mb-2"><span className="font-semibold text-zeus-brightgold">{isAr ? "فرص التطور: " : "Growth: "}</span><span className="text-muted-foreground">{f.growth_opportunities}</span></p>}
-                    {f.pros?.length > 0 && <div className="text-[11px] text-emerald-400 mb-1">{isAr ? "مميزات: " : "Pros: "}{f.pros.join("، ")}</div>}
-                    {f.cons?.length > 0 && <div className="text-[11px] text-red-400 mb-1">{isAr ? "عيوب: " : "Cons: "}{f.cons.join("، ")}</div>}
-                    {f.why_fits && <div className="text-[11px] text-zeus-brightgold mt-2 pt-2 border-t border-border/40">{f.why_fits}</div>}
-                    <button type="button" onClick={() => sendDiscovery(f.field)} disabled={typing} className="mt-3 w-full rounded-full bg-zeus-gold/10 border border-zeus-gold/30 px-3 py-2 text-xs font-semibold text-zeus-brightgold hover:bg-zeus-gold/20 disabled:opacity-50">
+                    {f.estimated_learning_time && <p className="text-xs mb-2"><span className="font-semibold text-muted-foreground">{isAr ? "مدة تقريبية للتعلّم: " : "Estimated learning time: "}</span><span className="text-muted-foreground">{f.estimated_learning_time}</span></p>}
+                    {f.estimated_learning_time_note && <p className="text-[11px] text-muted-foreground mb-2">{f.estimated_learning_time_note}</p>}
+                    {f.why_fits && <div className="text-[11px] text-muted-foreground mt-2 pt-2 border-t border-border/40">{f.why_fits}</div>}
+                    <button type="button" onClick={() => {
+                      const selectedField = findCareerField(f.field);
+                      void sendDiscovery(
+                        selectedField?.title[isAr ? "ar" : "en"] || f.field,
+                        false,
+                        selectedField ? { goal: selectedField.title.en, field_comparison_pending: true } : {},
+                      );
+                    }} disabled={typing} className="mt-3 w-full rounded-full bg-secondary/40 border border-border/70 px-3 py-2 text-xs font-semibold text-foreground hover:bg-secondary/70 disabled:opacity-50">
                       {isAr ? `أنا ميّال لـ ${f.field}` : `I'm leaning toward ${f.field}`}
                     </button>
                   </div>
                 ))}
               </div>
             )}
+            </div>
             </>
           )}
           {step === "dna" && <DnaSummary profile={profile} isAr={isAr} Arrow={Arrow} onBack={() => setStep("discovery")} onConfirm={() => goto("goal")} />}
-          {step === "goal" && <GoalStep recs={recs} profile={profile} typing={typing} onPick={pickGoal} onRetry={() => loadGoals(true)} goalsError={goalsError} t={t} isAr={isAr} />}
+          {step === "goal" && <GoalStep recs={recs} profile={profile} typing={typing} onPick={pickGoal} onRetry={() => loadGoals(true)} goalsError={goalsError} t={t} isAr={isAr} onOpenGuide={() => setFieldGuideSource("goal")} />}
           {step === "assessment" && <AssessmentStep skills={keySkills} levels={skillLevels} setLevels={setSkillLevels} skillsText={skillsText} setSkillsText={setSkillsText} onSubmit={submitSkills} t={t} isAr={isAr} Arrow={Arrow} isBeginner={isBeginnerProfile} goal={profile?.goal} lang={lang} />}
           {step === "roadmap" && <RoadmapReveal preview={roadmapPreview} typing={typing} building={building} onBuild={buildRoadmap} onRetry={() => loadRoadmap(true)} error={roadmapError} errorMessage={roadmapErrorMessage} isAr={isAr} companionName={companionName} />}
+            </>
+          )}
         </div>
       </main>
     </div>
   );
 }
 
-function GoalStep({ recs, profile, typing, onPick, onRetry, goalsError, t, isAr }) {
+function GoalStep({ recs, profile, typing, onPick, onRetry, goalsError, t, isAr, onOpenGuide }) {
   const [custom, setCustom] = useState("");
   const [expanded, setExpanded] = useState(0);
   const empty = !recs || !Array.isArray(recs.recommendations) || recs.recommendations.length === 0;
@@ -533,6 +777,10 @@ function GoalStep({ recs, profile, typing, onPick, onRetry, goalsError, t, isAr 
       <div className="text-center mb-6">
         <div className="text-zeus-gold text-sm font-semibold uppercase tracking-wider mb-1">{isAr ? "اختيار المسار" : "Choose your direction"}</div>
         <h2 className="font-heading font-extrabold text-2xl sm:text-3xl">{isAr ? "مجالات ممكن تناسبك" : "Fields that may fit you"}</h2>
+        <button type="button" onClick={onOpenGuide} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-full border border-border/70 px-4 text-sm text-muted-foreground transition hover:bg-secondary/50 hover:text-foreground">
+          <BookOpen className="h-4 w-4" />
+          {isAr ? "افتح دليل المجالات" : "Open the field guide"}
+        </button>
         <p className="text-muted-foreground mt-2 text-sm">{recs?.is_comprehensive_ai_path
           ? (isAr ? `بناءً على ميولك وهدفك${profile?.goal ? ` (${profile.goal})` : ""}، هتلاقي مسار AI Engineer الشامل الأول وبعده تخصصات بديلة. افتح التفاصيل وقارن طبيعة الشغل والمهارات والمشاريع قبل ما تختار.` : `Based on your interests and goals${profile?.goal ? ` (${profile.goal})` : ""}, you'll see the full AI Engineer path first, followed by optional specializations. Open the details and compare the work, skills, and projects before choosing.`)
           : (isAr ? `بناءً على ميولك وهدفك${profile?.goal ? ` (${profile.goal})` : ""}، قارن طبيعة الشغل والمهارات والمشاريع قبل ما تختار.` : `Based on your interests and goals${profile?.goal ? ` (${profile.goal})` : ""}, compare the work, skills, and projects before choosing.`)}</p>

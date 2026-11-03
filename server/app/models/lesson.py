@@ -31,7 +31,7 @@ class Lesson(SQLModel, table=True):
     pdf_url: Optional[str] = None
     pdf_iframe_ready: bool = Field(default=False)
     resources: Optional[List[dict]] = Field(default=None, sa_column=Column(JSON))
-    quiz_passing_score: int = Field(default=70)
+    quiz_passing_score: int = Field(default=80)
     content_ready: bool = Field(default=False)
     created_date: datetime = Field(default_factory=datetime.utcnow)
     updated_date: datetime = Field(default_factory=datetime.utcnow)

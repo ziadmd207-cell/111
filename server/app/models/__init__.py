@@ -13,6 +13,9 @@ from .user import User
 from .subscription_request import SubscriptionRequest
 from .admin_setting import AdminSetting
 from .support_request import SupportRequest
+from .support_chat import SupportChat, SupportChatMessage
+from .certificate import Certificate
+from .partner import Partner, PartnerMember, PartnerAssessment, PartnerAssessmentAttempt
 
 __all__ = [
     "LearningProfile",
@@ -31,4 +34,11 @@ __all__ = [
     "SubscriptionRequest",
     "AdminSetting",
     "SupportRequest",
+    "SupportChat",
+    "SupportChatMessage",
+    "Certificate",
+    "Partner",
+    "PartnerMember",
+    "PartnerAssessment",
+    "PartnerAssessmentAttempt",
 ]

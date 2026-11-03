@@ -65,10 +65,10 @@ export default function Companion() {
     })();
   }, [loadAttempt]);
 
-  const send = async (text, retry = false) => {
+  const send = async (text, images = [], retry = false) => {
     if (inFlightRef.current || typing) return;
     inFlightRef.current = true;
-    const userMsg = { role: "user", content: text, ts: new Date().toISOString() };
+    const userMsg = { role: "user", content: text, images, ts: new Date().toISOString() };
     const history = retry ? messages.filter((message) => !message.retryable) : messages;
     const next = retry ? history : [...history, userMsg];
     setMessages(next);
@@ -76,7 +76,7 @@ export default function Companion() {
     setTyping(true);
     try {
       const res = await api.functions.invoke("companionChat", {
-        messages: next.map((m) => ({ role: m.role, content: m.content })),
+        messages: next.map((m) => ({ role: m.role, content: m.content, images: m.images || [] })),
         profile, roadmap, currentTask, companionName: profile?.companion_name, lang
       });
       const data = res.data || res;
@@ -137,7 +137,7 @@ export default function Companion() {
       <div className="zeus-glass p-5 h-[65vh] flex flex-col">
         <ChatPanel messages={messages} onSend={send} onRetry={() => {
           const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
-          if (lastUserMessage) send(lastUserMessage.content, true);
+          if (lastUserMessage) send(lastUserMessage.content, lastUserMessage.images || [], true);
         }} typing={typing} disabled={!conversation || chatBusy} placeholder={t("companion.placeholder")} companionName={profile?.companion_name} t={t} lang={lang} />
       </div>
     </div>

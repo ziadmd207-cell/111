@@ -11,25 +11,29 @@ export default function CVPreview({ cv, isAr, previewRef }) {
 
   const skillCategories = {};
   skills.forEach((s) => {
-    const cat = s.category || "Other";
+    const name = typeof s === "string" ? s : s.name;
+    const cat = typeof s === "string" ? "Other" : s.category || "Other";
     if (!skillCategories[cat]) skillCategories[cat] = [];
-    skillCategories[cat].push(s.name);
+    if (name) skillCategories[cat].push(name);
   });
 
   const certList = certs.map((c) => typeof c === "string" ? { name: c } : c);
 
   return (
     <div ref={previewRef} className="bg-white text-black overflow-hidden" style={{ minHeight: 400, fontFamily: "'Georgia', 'Times New Roman', serif" }}>
-      <div className="px-8 py-6 border-b-2 border-black">
-        <h1 className="text-3xl font-bold tracking-tight text-black">{cv.full_name || "—"}</h1>
-        {cv.title_role && <p className="text-sm font-medium mt-1 text-gray-700">{cv.title_role}</p>}
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-[11px] text-gray-600">
-          {cv.email && <span>{cv.email}</span>}
-          {cv.phone && <span>{cv.phone}</span>}
-          {cv.location && <span>{cv.location}</span>}
-          {cv.linkedin && <a href={cv.linkedin} target="_blank" rel="noreferrer" className="text-blue-700 underline cursor-pointer">LinkedIn</a>}
-          {cv.github && <a href={cv.github} target="_blank" rel="noreferrer" className="text-blue-700 underline cursor-pointer">GitHub</a>}
+      <div className="px-8 py-6 border-b-2 border-black flex items-start gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-3xl font-bold tracking-tight text-black">{cv.full_name || "—"}</h1>
+          {cv.title_role && <p className="text-sm font-medium mt-1 text-gray-700">{cv.title_role}</p>}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-[11px] text-gray-600">
+            {cv.email && <span>{cv.email}</span>}
+            {cv.phone && <span>{cv.phone}</span>}
+            {cv.location && <span>{cv.location}</span>}
+            {cv.linkedin && <a href={cv.linkedin} target="_blank" rel="noreferrer" className="text-blue-700 underline cursor-pointer">LinkedIn</a>}
+            {cv.github && <a href={cv.github} target="_blank" rel="noreferrer" className="text-blue-700 underline cursor-pointer">GitHub</a>}
+          </div>
         </div>
+        {cv.photo_url && <img src={cv.photo_url} alt="" crossOrigin="anonymous" className="h-20 w-20 shrink-0 rounded-full object-cover" />}
       </div>
 
       <div className="px-8 py-5 space-y-4">

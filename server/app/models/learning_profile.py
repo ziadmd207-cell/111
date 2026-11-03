@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Column, JSON
 import uuid
@@ -12,15 +12,20 @@ class LearningProfile(SQLModel, table=True):
     companion_name: str = Field(default="Zeus")
     onboarding_step: str = Field(default="discovery")
     goal: Optional[str] = None
+    field_comparison_pending: bool = Field(default=False)
+    field_motivation: Optional[str] = None
+    work_preference: Optional[str] = None
     current_level: Optional[str] = None
     learning_style: Optional[str] = None
     preferred_language: Optional[str] = None
     depth: Optional[str] = None
     weekly_hours: Optional[float] = None
     available_days: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    study_hours_by_day: Optional[Dict[str, float]] = Field(default=None, sa_column=Column(JSON))
     preferred_time: Optional[str] = None
     motivation: Optional[str] = None
     stop_triggers: Optional[str] = None
+    distractions: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
     encouragement: Optional[str] = None
     weaknesses: Optional[str] = None
     strengths: Optional[str] = None

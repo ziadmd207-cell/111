@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate, Link, Navigate } from "react-router-dom";
 import {
-  Home, Map, TrendingUp, Users, Briefcase,
-  Settings, LogOut, Menu, X, Calendar, Bell, Sparkles, Zap
+  Home, TrendingUp, Users, Briefcase, Compass, FolderKanban,
+  Settings, LogOut, Menu, X, Calendar, Bell, Sparkles, Award, ClipboardList
 } from "lucide-react";
 import { api } from "@/api/client";
 import { useI18n } from "@/lib/i18n";
@@ -16,13 +16,16 @@ import { ZEUS_IMAGES, withImageFallback } from "@/lib/zeus-images";
 import { getUserTier, canAccessPath } from "@/lib/tier";
 
 const NAV = [
-  { key: "nav.home", to: "/app", icon: Home, minTier: "STARTER" },
-  { key: "nav.roadmap", to: "/roadmap", icon: Map, minTier: "STARTER" },
-  { key: "nav.schedule", to: "/schedule", icon: Calendar, minTier: "STARTER" },
-  { key: "nav.progress", to: "/progress", icon: TrendingUp, minTier: "STARTER" },
+  { key: "nav.home", to: "/app", icon: Home, minTier: "STARTER", feature: "learning" },
+  { key: "nav.schedule", to: "/schedule", icon: Calendar, labelAr: "خطة ودروس", labelEn: "Plan & Lessons", minTier: "STARTER", feature: "learning" },
+  { key: "nav.discover", to: "/discover", icon: Compass, minTier: "STARTER", feature: "learning" },
+  { key: "nav.progress", to: "/statistics", icon: TrendingUp, labelAr: "إحصائيات التعلم", labelEn: "Learning statistics", minTier: "PRO", feature: "statistics" },
+  { key: "partner.assessments", to: "/partner/assessments", icon: ClipboardList, labelAr: "اختبارات الشريك", labelEn: "Partner exams", minTier: "STARTER", feature: "learning" },
+  { key: "nav.projects", to: "/projects", icon: FolderKanban, minTier: "PRO", feature: "projects" },
   { key: "nav.subscriptions", to: "/subscriptions", icon: Sparkles, labelAr: "الاشتراكات", labelEn: "Subscriptions", minTier: "NONE" },
-  { key: "nav.community", to: "/community", icon: Users, minTier: "PRIME" },
-  { key: "nav.career", to: "/career", icon: Briefcase, minTier: "PRIME" },
+  { key: "certificates", to: "/certificates", icon: Award, labelAr: "الشهادات", labelEn: "Certificates", minTier: "PRIME", feature: "certificates" },
+  { key: "nav.community", to: "/community", icon: Users, minTier: "PRIME", feature: "community" },
+  { key: "nav.career", to: "/career", icon: Briefcase, minTier: "PRIME", feature: "career" },
   { key: "nav.settings", to: "/settings", icon: Settings, minTier: "NONE" }
 ];
 
@@ -36,23 +39,67 @@ export default function AppShell() {
   const loc = useLocation();
   const nav = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
-
-  // Hard separation: admins never live in user pages.
-  if (user?.role === "admin") {
-    return <Navigate to="/admin" replace />;
-  }
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   // No free tier: hide anything the user's plan doesn't include, and keep
   // users without an active subscription on the subscriptions page only.
   const userTier = getUserTier(user);
   const rankOf = (t) => ({ NONE: 0, STARTER: 1, PRO: 2, PRIME: 3 }[t] ?? 0);
-  const navItems = NAV.filter((n) => rankOf(userTier) >= rankOf(n.minTier || "STARTER"));
+  const isFeatureEnabled = (feature) => {
+    if (!user?.subscription?.partner_managed || !feature) return true;
+    if (typeof user.subscription.features?.[feature] === "boolean") return user.subscription.features[feature];
+    return ({ STARTER: ["learning"], PRO: ["learning", "statistics", "projects"], PRIME: ["learning", "statistics", "community", "projects", "cv", "portfolio", "career", "certificates"] }[userTier] || []).includes(feature);
+  };
+  const navItems = NAV.filter((n) => (
+    (n.key !== "partner.assessments" || user?.role === "partner_student")
+    && (user?.subscription?.partner_managed || rankOf(userTier) >= rankOf(n.minTier || "STARTER"))
+    && isFeatureEnabled(n.feature)
+  ));
+
+  useEffect(() => {
+    if (!user || user.role === "admin") return undefined;
+    let active = true;
+    const refreshUnread = async () => {
+      try {
+        const notifications = await api.entities.Notification.filter({}, "-created_date", 100);
+        if (active) setUnreadNotifications(notifications.filter((item) => !item.read).length);
+      } catch (error) {
+        console.error("Unable to load notification count", error);
+      }
+    };
+    refreshUnread();
+    const timer = window.setInterval(refreshUnread, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [user?.id, user?.role]);
+
+  // Hard separation: admins never live in user pages.
+  if (user?.role === "admin") {
+    return <Navigate to="/admin" replace />;
+  }
+  if (user?.role === "partner") {
+    return <Navigate to="/partner" replace />;
+  }
+  if (user?.role === "doctor") {
+    return <Navigate to="/doctor" replace />;
+  }
 
   // Direct-URL protection: typing /career or /projects without the tier
   // bounces to /subscriptions instead of showing a dead page.
-  if (!canAccessPath(loc.pathname, userTier) && loc.pathname !== "/settings") {
+  if (!user?.subscription?.partner_managed && !canAccessPath(loc.pathname, userTier) && loc.pathname !== "/settings") {
     return <Navigate to="/subscriptions" replace />;
   }
+  const pathFeature = loc.pathname.startsWith("/statistics") ? "statistics"
+    : loc.pathname.startsWith("/projects") ? "projects"
+      : loc.pathname.startsWith("/community") ? "community"
+        : loc.pathname.startsWith("/career") ? "career"
+          : loc.pathname.startsWith("/cv-builder") ? "cv"
+            : loc.pathname.startsWith("/certificates") ? "certificates"
+              : ["schedule", "discover", "lesson"].some((part) => loc.pathname.startsWith(`/${part}`)) ? "learning"
+                : null;
+  if (!isFeatureEnabled(pathFeature)) return <Navigate to="/app" replace />;
 
   const handleLogout = async () => {
     await api.auth.logout();
@@ -72,7 +119,7 @@ export default function AppShell() {
   }
 
   const SidebarLink = ({ item }) => {
-    const active = loc.pathname === item.to;
+    const active = loc.pathname === item.to || (item.to === "/schedule" && loc.pathname === "/roadmap");
     const Icon = item.icon;
     const label = item.labelAr ? (isAr ? item.labelAr : item.labelEn) : t(item.key);
     return (
@@ -133,6 +180,7 @@ export default function AppShell() {
             <ThemeToggle />
             <Link to="/notifications" className="relative p-2 rounded-full hover:bg-secondary/60 transition">
               <Bell style={{ width: 18, height: 18 }} className="text-muted-foreground" />
+              {unreadNotifications > 0 && <span className="absolute -end-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}
             </Link>
             <Link to="/profile" className="w-9 h-9 rounded-full overflow-hidden border-2 border-zeus-gold/40 hover:border-zeus-gold transition">
               <img src={ZEUS_IMAGES.avatar} alt="Profile" className="w-full h-full object-cover object-top" onError={withImageFallback} />
@@ -149,12 +197,12 @@ export default function AppShell() {
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-card/90 backdrop-blur-xl border-t border-border/60" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div className="flex items-center justify-around px-2 h-16">
         {navItems.filter((n) => BOTTOM.includes(n.key)).map((item) => {
-          const active = loc.pathname === item.to;
+          const active = loc.pathname === item.to || (item.to === "/schedule" && loc.pathname === "/roadmap");
           const Icon = item.icon;
           return (
             <Link key={item.key} to={item.to} className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-[10px] font-medium whitespace-nowrap transition ${active ? "text-zeus-brightgold" : "text-muted-foreground"}`}>
               <Icon style={{ width: 20, height: 20 }} className={active ? "text-zeus-gold" : ""} />
-              <span>{t(item.key)}</span>
+              <span>{item.labelAr ? (isAr ? item.labelAr : item.labelEn) : t(item.key)}</span>
             </Link>
           );
         })}
@@ -181,7 +229,7 @@ export default function AppShell() {
                 return (
                   <Link key={item.key} to={item.to} onClick={() => setMoreOpen(false)} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl text-xs ${active ? "bg-zeus-gold/15 text-zeus-brightgold" : "bg-secondary/40 text-muted-foreground"}`}>
                     <Icon style={{ width: 20, height: 20 }} />
-                    <span>{t(item.key)}</span>
+                    <span>{item.labelAr ? (isAr ? item.labelAr : item.labelEn) : t(item.key)}</span>
                   </Link>
                 );
               })}

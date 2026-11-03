@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Bot } from "lucide-react";
+import { X } from "lucide-react";
 import ChatPanel from "@/components/zeus/ChatPanel";
 import { ZEUS_IMAGES, withImageFallback } from "@/lib/zeus-images";
 

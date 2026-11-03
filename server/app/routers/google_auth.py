@@ -15,6 +15,7 @@ import time
 from urllib.parse import urlencode, quote
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlmodel import Session, select
@@ -22,6 +23,7 @@ from sqlmodel import Session, select
 from ..core.config import settings
 from ..core.database import get_session
 from ..core.security import create_access_token
+from ..core.phone import normalize_phone
 from ..models import User
 
 router = APIRouter()
@@ -40,8 +42,13 @@ def _sign_state(payload: str) -> str:
     return base64.urlsafe_b64encode(payload.encode()).decode() + "." + base64.urlsafe_b64encode(sig).decode()
 
 
-def _verify_state(state: str) -> str | None:
-    """Return safe returnTo if signature + expiry valid, else None (fail closed)."""
+def _phone_cipher() -> Fernet:
+    key = hashlib.sha256(b"zeus-google-phone:" + _state_secret()).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def _state_data(state: str) -> dict | None:
+    """Return verified state data or None; phone details remain encrypted at rest in state."""
     try:
         b64pay, b64sig = state.split(".", 1)
         payload = base64.urlsafe_b64decode(b64pay.encode()).decode()
@@ -52,11 +59,54 @@ def _verify_state(state: str) -> str | None:
         if time.time() - float(data.get("ts", 0)) > _STATE_TTL:
             return None
         dest = str(data.get("to", "/onboarding"))
-        if not _RETURNTO_RE.match(dest) or ".." in dest or "\\" in dest:
+        if not _RETURNTO_RE.match(dest) or dest.startswith("//") or ".." in dest or "\\" in dest:
             return None
-        return dest
+        return data
     except Exception:
         return None
+
+
+def _verify_state(state: str) -> dict | None:
+    """Return verified state data, or None when its signature or destination is invalid."""
+    return _state_data(state)
+
+
+def _encrypt_phone(phone: dict[str, str]) -> str:
+    return _phone_cipher().encrypt(json.dumps(phone, separators=(",", ":")).encode()).decode()
+
+
+def _decrypt_phone(value: str | None) -> dict[str, str] | None:
+    if not value:
+        return None
+    try:
+        decoded = json.loads(_phone_cipher().decrypt(value.encode(), ttl=_STATE_TTL))
+        return decoded if isinstance(decoded, dict) else None
+    except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def _google_auth_url(returnTo: str = "/onboarding", encrypted_phone: str | None = None) -> dict[str, str]:
+    cid, _, redir = _google_cfg()
+    if not cid:
+        raise HTTPException(status_code=500, detail="Google login is not configured (missing Client ID)")
+    if not _RETURNTO_RE.match(returnTo or "") or returnTo.startswith("//") or ".." in returnTo or "\\" in returnTo:
+        returnTo = "/onboarding"
+
+    payload_data = {"n": secrets.token_urlsafe(16), "to": returnTo, "ts": time.time()}
+    if encrypted_phone:
+        payload_data["phone"] = encrypted_phone
+    state = _sign_state(json.dumps(payload_data, separators=(",", ":")))
+    params = {
+        "client_id": cid,
+        "redirect_uri": redir,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    }
+    return {"auth_url": f"{_GOOGLE_AUTH_URL}?{urlencode(params)}", "state": state}
+
 
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -78,25 +128,19 @@ def _frontend_base() -> str:
 
 
 @router.get("/google/login")
-def google_login(returnTo: str = "/onboarding"):
-    cid, _, redir = _google_cfg()
-    if not cid:
-        raise HTTPException(status_code=500, detail="Google login is not configured (missing Client ID)")
-    # strict same-origin relative path, no query (prevents param injection)
-    if not _RETURNTO_RE.match(returnTo or "") or ".." in (returnTo or ""):
-        returnTo = "/onboarding"
-    payload = json.dumps({"n": secrets.token_urlsafe(16), "to": returnTo, "ts": time.time()})
-    state = _sign_state(payload)
-    params = {
-        "client_id": cid,
-        "redirect_uri": redir,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "access_type": "offline",
-        "prompt": "consent",
-        "state": state,
-    }
-    return {"auth_url": f"{_GOOGLE_AUTH_URL}?{urlencode(params)}", "state": state}
+def google_login(
+    returnTo: str = "/onboarding",
+    phone_country: str = "",
+    phone_number: str = "",
+):
+    encrypted_phone = None
+    if phone_country or phone_number:
+        try:
+            phone = normalize_phone(phone_country, phone_number)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        encrypted_phone = _encrypt_phone(phone)
+    return _google_auth_url(returnTo, encrypted_phone)
 
 
 @router.get("/google/callback")
@@ -110,9 +154,10 @@ async def google_callback(code: str = "", state: str = "", error: str = "", sess
     if not cid or not csec:
         return RedirectResponse(f"{front}/login?google_error=not_configured", status_code=302)
     # Fail closed on forged/expired state (login-CSRF protection).
-    returnTo = _verify_state(state)
-    if not returnTo:
+    state_data = _verify_state(state)
+    if not state_data:
         return RedirectResponse(f"{front}/login?google_error=bad_state", status_code=302)
+    returnTo = str(state_data["to"])
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             tok = await client.post(_GOOGLE_TOKEN_URL, data={
@@ -174,12 +219,17 @@ async def google_callback(code: str = "", state: str = "", error: str = "", sess
             session.add(user)
             session.commit()
     else:
-        # New Google users start as pending too: no plan yet, no entry.
-        # They land on login?google_error=pending until admin approves.
+        phone = _decrypt_phone(state_data.get("phone"))
+        if not phone:
+            return RedirectResponse(f"{front}/login?google_error=phone_required", status_code=302)
+        existing_phone = session.exec(select(User).where(User.phone_e164 == phone["phone_e164"])).first()
+        if existing_phone:
+            return RedirectResponse(f"{front}/login?google_error=phone_in_use", status_code=302)
         user = User(
             email=email,
             password_hash="",
             full_name=full_name,
+            **phone,
             status="pending",
             subscription_status="none",
             google_id=google_id or None,

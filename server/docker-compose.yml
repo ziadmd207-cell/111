@@ -4,26 +4,28 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: zeus
-      POSTGRES_PASSWORD: zeus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set a strong POSTGRES_APP_PASSWORD in .env}
       POSTGRES_DB: zeus
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init-app-role.sh:/docker-entrypoint-initdb.d/20-create-app-role.sh:ro
   api:
     build: .
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://zeus:zeus@postgres:5432/zeus
+      DATABASE_URL: postgresql://zeus_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/zeus
       USE_SQLITE_FALLBACK: ${USE_SQLITE_FALLBACK:-false}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      SECRET_KEY: ${SECRET_KEY:-zeus-dev-secret-change-me}
+      SECRET_KEY: ${SECRET_KEY:?Set a strong SECRET_KEY in .env}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
     depends_on:
       - postgres

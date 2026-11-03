@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -11,6 +12,7 @@ import TierRoute from '@/components/TierRoute';
 import AdminRoute from '@/components/AdminRoute';
 import { I18nProvider } from '@/lib/i18n';
 import { ProfileProvider } from '@/lib/ProfileContext';
+import { api } from '@/api/client';
 
 // Auth pages
 import Login from '@/pages/Login';
@@ -25,7 +27,6 @@ import Onboarding from '@/pages/Onboarding';
 import AppShell from '@/components/zeus/AppShell';
 import Home from '@/pages/Home';
 import Journey from '@/pages/Journey';
-import Roadmap from '@/pages/Roadmap';
 import Learn from '@/pages/Learn';
 import Progress from '@/pages/Progress';
 import Community from '@/pages/Community';
@@ -41,8 +42,39 @@ import Profile from '@/pages/Profile';
 import Settings from '@/pages/Settings';
 import PublicPortfolio from '@/pages/PublicPortfolio';
 import Admin from '@/pages/Admin';
+import AdminSupportChats from '@/pages/AdminSupportChats';
+import AdminAISettings from '@/pages/AdminAISettings';
+import AdminCertificates from '@/pages/AdminCertificates';
+import AdminUserPreview from '@/pages/AdminUserPreview';
+import AdminPartners from '@/pages/Partners';
+import PartnerWorkspace from '@/pages/PartnerWorkspace';
+import PartnerAssessments from '@/pages/PartnerAssessments';
 import Subscriptions from '@/pages/Subscriptions';
 import { GlobalSupport, SocialFooter } from '@/components/zeus/GlobalSupport';
+import Certificates from '@/pages/Certificates';
+import PublicCertificate from '@/pages/PublicCertificate';
+
+function SubscriptionSessionMonitor() {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return undefined;
+    const timer = window.setInterval(async () => {
+      try {
+        await api.auth.me();
+      } catch (error) {
+        if (error?.status === 401) {
+          await api.auth.logout();
+        } else if (error?.status !== 403) {
+          console.error('Unable to refresh the current session', error);
+        }
+      }
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [user]);
+
+  return null;
+}
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -78,6 +110,7 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
 
       <Route path="/portfolio/:userId" element={<PublicPortfolio />} />
+      <Route path="/certificate/:shareToken" element={<PublicCertificate />} />
       <Route path="/subscriptions" element={<Subscriptions />} />
       <Route path="/pricing" element={<Navigate to="/subscriptions" replace />} />
 
@@ -87,29 +120,39 @@ const AuthenticatedApp = () => {
         <Route path="/admin" element={<AdminRoute />}>
           <Route index element={<Admin tab="stats" />} />
           <Route path="users" element={<Admin tab="users" />} />
+          <Route path="users/:userId/preview" element={<AdminUserPreview />} />
+          <Route path="partners" element={<AdminPartners />} />
           <Route path="subscribers" element={<Admin tab="subscribers" />} />
           <Route path="communities" element={<Admin tab="communities" />} />
-          <Route path="moderation" element={<Admin tab="moderation" />} />
+          <Route path="moderation" element={<Navigate to="/admin/communities" replace />} />
           <Route path="broadcast" element={<Admin tab="broadcast" />} />
           <Route path="support" element={<Admin tab="support" />} />
+          <Route path="support-chats" element={<Admin tab="support-chats" />} />
           <Route path="settings" element={<Admin tab="settings" />} />
+          <Route path="ai-settings" element={<AdminAISettings />} />
+          <Route path="certificates" element={<AdminCertificates />} />
         </Route>
+        <Route path="/partner" element={<PartnerWorkspace />} />
+        <Route path="/partner/assessments" element={<PartnerAssessments />} />
+        <Route path="/doctor" element={<Navigate to="/partner" replace />} />
         <Route element={<ProfileProvider><AppShell /></ProfileProvider>}>
           <Route path="/app" element={<Home />} />
           <Route path="/journey" element={<Navigate to="/roadmap" replace />} />
-          <Route path="/roadmap" element={<Roadmap />} />
+          <Route path="/roadmap" element={<Schedule />} />
           <Route path="/learn" element={<Navigate to="/schedule" replace />} />
-          <Route path="/progress" element={<Progress />} />
-          <Route path="/community" element={<TierRoute minTier="PRIME"><Community /></TierRoute>} />
-          <Route path="/projects" element={<TierRoute minTier="PRO"><Projects /></TierRoute>} />
-          <Route path="/career" element={<TierRoute minTier="PRIME"><Career /></TierRoute>} />
-          <Route path="/cv-builder" element={<TierRoute minTier="PRIME"><CVBuilder /></TierRoute>} />
+          <Route path="/progress" element={<Navigate to="/statistics" replace />} />
+          <Route path="/statistics" element={<TierRoute minTier="PRO" feature="statistics"><Progress /></TierRoute>} />
+          <Route path="/community" element={<TierRoute minTier="PRIME" feature="community"><Community /></TierRoute>} />
+          <Route path="/projects" element={<TierRoute minTier="PRO" feature="projects"><Projects /></TierRoute>} />
+          <Route path="/career" element={<TierRoute minTier="PRIME" feature="career"><Career /></TierRoute>} />
+          <Route path="/cv-builder" element={<TierRoute minTier="PRIME" feature="cv"><CVBuilder /></TierRoute>} />
           <Route path="/discover" element={<Discover />} />
           <Route path="/schedule" element={<Schedule />} />
-          <Route path="/lesson/:lessonId" element={<Lesson />} />
+          <Route path="/lesson/:lessonId" element={<TierRoute minTier="PRO" feature="learning"><Lesson /></TierRoute>} />
           <Route path="/companion" element={<Companion />} />
           <Route path="/notifications" element={<Notifications />} />
-          <Route path="/profile" element={<Profile />} />
+          <Route path="/certificates" element={<TierRoute minTier="PRIME" feature="certificates"><Certificates /></TierRoute>} />
+          <Route path="/profile" element={<TierRoute minTier="PRIME" feature="cv"><Profile /></TierRoute>} />
           <Route path="/settings" element={<Settings />} />
         </Route>
       </Route>
@@ -126,6 +169,7 @@ function App() {
         <QueryClientProvider client={queryClientInstance}>
           <Router>
             <ScrollToTop />
+            <SubscriptionSessionMonitor />
             <AuthenticatedApp />
             <SocialFooter />
             <GlobalSupport />

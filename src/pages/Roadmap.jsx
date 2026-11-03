@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Workflow, Loader2, Target, CheckCircle2 } from "lucide-react";
+import { Workflow, Loader2, Target, CheckCircle2, Lock } from "lucide-react";
 import { api } from "@/api/client";
 import { useI18n } from "@/lib/i18n";
+import { useAuth } from "@/lib/AuthContext";
+import { getUserTier, tierRank } from "@/lib/tier";
 import { useToast } from "@/components/ui/use-toast";
 import RoadmapTree from "@/components/zeus/RoadmapTree";
 import NodeDetail from "@/components/zeus/NodeDetail";
@@ -14,10 +17,12 @@ const ytId = (url) => {
   return m ? m[1] : null;
 };
 
-export default function Roadmap() {
+export default function Roadmap({ roadmapId: selectedRoadmapId } = {}) {
   const { t, lang, dir } = useI18n();
+  const { user } = useAuth();
   const { toast } = useToast();
   const isAr = lang === "ar";
+  const canViewResources = user?.role === "admin" || tierRank(getUserTier(user)) >= tierRank("PRO");
   const [roadmap, setRoadmap] = useState(null);
   const [loading, setLoading] = useState(true);
   const [openTreeId, setOpenTreeId] = useState(null);
@@ -33,16 +38,21 @@ export default function Roadmap() {
 
   useEffect(() => {
     (async () => {
-      const r = await api.entities.Roadmap.filter({ status: "active" }, "-created_date", 1);
+      const r = await api.entities.Roadmap.filter(
+        selectedRoadmapId ? { id: selectedRoadmapId } : { status: "active" },
+        "-created_date",
+        1
+      );
       if (r.length) setRoadmap(r[0]);
       setLoading(false);
     })();
-  }, []);
+  }, [selectedRoadmapId]);
 
   // Serialized fetch — one node at a time so results never overwrite each other.
   // Consumes the real backend contract {resources: [...]} (NOT {success,nodes}),
   // merges into the node AND persists to the roadmap so videos survive reloads.
   const doFetch = useCallback((nodeId, { manual = false } = {}) => {
+    if (!canViewResources) return Promise.resolve({ ok: false, locked: true });
     if (inFlightRef.current.has(nodeId)) return chainRef.current;
     inFlightRef.current.add(nodeId);
     const run = chainRef.current.then(async () => {
@@ -88,7 +98,7 @@ export default function Roadmap() {
     chainRef.current = run.catch(() => {});
     run.finally(() => inFlightRef.current.delete(nodeId));
     return run;
-  }, [lang, isAr, toast]);
+  }, [lang, isAr, toast, canViewResources]);
 
   const fetchResources = useCallback((nodeId) => {
     failedRef.current.delete(nodeId);
@@ -100,7 +110,7 @@ export default function Roadmap() {
   // YouTube quota allows ~100 nodes/day, so prefetch the whole roadmap —
   // an unfetched roadmap looks like "shallow search with no videos".
   useEffect(() => {
-    if (!roadmap?.id) return;
+    if (!roadmap?.id || !canViewResources) return;
     let cancelled = false;
     (async () => {
       setPrefetching(true);
@@ -115,9 +125,10 @@ export default function Roadmap() {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roadmap?.id, doFetch]);
+  }, [roadmap?.id, doFetch, canViewResources]);
 
   const ensureResources = (nodeId) => {
+    if (!canViewResources) return;
     const node = (roadmap?.nodes || []).find((n) => n.id === nodeId);
     if (node && !isReady(node) && !failedRef.current.has(nodeId)) doFetch(nodeId);
   };
@@ -155,7 +166,12 @@ export default function Roadmap() {
             <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-card/70 border border-border/60 text-xs font-semibold text-muted-foreground">
               {isAr ? "عرض القائمة" : "List view"}
             </div>
-            {prefetching && ready < nodes.length ? (
+            {!canViewResources ? (
+              <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                <Lock className="text-zeus-gold" style={{ width: 12, height: 12 }} />
+                {isAr ? "مصادر الفيديو متاحة مع PRO" : "Video resources are included with PRO"}
+              </span>
+            ) : prefetching && ready < nodes.length ? (
               <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                 <Loader2 className="text-zeus-gold animate-spin" style={{ width: 12, height: 12 }} />
                 {isAr ? `بجهّز المصادر في الخلفية… ${ready}/${nodes.length}` : `Preparing resources in background… ${ready}/${nodes.length}`}
@@ -171,13 +187,23 @@ export default function Roadmap() {
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
             <RoadmapTree nodes={nodes} isAr={isAr} openId={openTreeId} onToggle={toggleTree}>
               {openTreeNode && (
-                <NodeDetail
-                  node={openTreeNode}
-                  isAr={isAr}
-                  loading={fetchingId === openTreeNode.id || (!isReady(openTreeNode) && !failedIds.includes(openTreeNode.id) && prefetching)}
-                  failed={failedIds.includes(openTreeNode.id)}
-                  onRefresh={() => fetchResources(openTreeNode.id)}
-                />
+                canViewResources ? (
+                  <NodeDetail
+                    node={openTreeNode}
+                    isAr={isAr}
+                    loading={fetchingId === openTreeNode.id || (!isReady(openTreeNode) && !failedIds.includes(openTreeNode.id) && prefetching)}
+                    failed={failedIds.includes(openTreeNode.id)}
+                    onRefresh={() => fetchResources(openTreeNode.id)}
+                  />
+                ) : (
+                  <div className="zeus-glass p-5 text-center">
+                    <Lock className="mx-auto mb-2 text-zeus-gold" style={{ width: 20, height: 20 }} />
+                    <p className="text-sm text-muted-foreground">{isAr ? "مصادر الدروس والفيديوهات متاحة مع باقة PRO." : "Lesson and video resources are included with PRO."}</p>
+                    <Link to="/subscriptions" className="mt-3 inline-flex rounded-full bg-zeus-gold px-4 py-2 text-xs font-semibold text-zeus-midnight">
+                      {isAr ? "عرض الباقات" : "View plans"}
+                    </Link>
+                  </div>
+                )
               )}
             </RoadmapTree>
           </motion.div>

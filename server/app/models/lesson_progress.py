@@ -11,6 +11,9 @@ class LessonProgress(SQLModel, table=True):
     lesson_id: str = Field(index=True)
     status: str = Field(default="not_started")
     video_watched: bool = Field(default=False)
+    video_position_sec: int = Field(default=0)
+    video_watched_sec: int = Field(default=0)
+    video_id: Optional[str] = None
     pdf_viewed: bool = Field(default=False)
     quiz_score: int = Field(default=0)
     attempts: int = Field(default=0)

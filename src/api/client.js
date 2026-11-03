@@ -9,6 +9,43 @@ function getToken() {
   try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
 }
 
+function expireSession(accessStatus) {
+  try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem("zeus_auth"); } catch {}
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.href = `/login?access_error=${encodeURIComponent(accessStatus)}`;
+  }
+}
+
+async function download(path) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(`${API_BASE}${path}`, { headers });
+  const accessStatus = response.headers.get("X-Subscription-Status") || response.headers.get("X-Account-Status");
+  if (token && accessStatus) expireSession(accessStatus);
+  if (response.status === 401 && token && path !== "/api/auth/login") expireSession("session_expired");
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    let data;
+    try { data = JSON.parse(text); } catch { data = { message: text }; }
+    const detail = Array.isArray(data.detail)
+      ? data.detail.map((item) => item.msg || JSON.stringify(item)).join("، ")
+      : data.detail;
+    const error = new Error(detail || data.error || data.message || `Request failed ${response.status}`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return response.blob();
+}
+
+function chatMessageForm(text, files) {
+  const form = new FormData();
+  form.append("text", text);
+  (files || []).forEach((file) => form.append("files", file));
+  return form;
+}
+
 async function request(path, { method = "GET", body, headers = {}, isFormData = false, signal } = {}) {
   const url = `${API_BASE}${path}`;
   const opts = { method, headers: { ...headers } };
@@ -33,14 +70,12 @@ async function request(path, { method = "GET", body, headers = {}, isFormData = 
     if (e && e.name === "AbortError") throw new Error("Request timed out — please try again");
     throw e;
   }
-  if (res.status === 401 && !path.startsWith("/api/auth/")) {
-    // Session expired/invalid: drop token and go to login — but ONLY when a
-    // token was actually sent. Anonymous users on public pages (e.g. pending
-    // subscribers uploading a receipt) must never be yanked to /login.
-    if (token) {
-      try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem("zeus_auth"); } catch {}
-      if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
-    }
+  const accessStatus = res.headers.get("X-Subscription-Status") || res.headers.get("X-Account-Status");
+  if (token && accessStatus) {
+    expireSession(accessStatus);
+  } else if (res.status === 401 && token && path !== "/api/auth/login") {
+    // Anonymous public requests must not be redirected to login.
+    expireSession("session_expired");
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -53,6 +88,7 @@ async function request(path, { method = "GET", body, headers = {}, isFormData = 
     const err = new Error(detail || data.error || data.message || `Request failed ${res.status}`);
     err.status = res.status;
     err.data = data;
+    err.subscriptionInactive = accessStatus === "inactive";
     throw err;
   }
   const ct = res.headers.get("content-type") || "";
@@ -189,6 +225,13 @@ export const api = {
     post: (path, body = {}) => request(`/api/admin${path}`, { method: "POST", body }),
     put: (path, body = {}) => request(`/api/admin${path}`, { method: "PUT", body }),
     del: (path) => request(`/api/admin${path}`, { method: "DELETE" }),
+    download: (path) => download(`/api/admin${path}`),
+    supportChat: (chatId) => request(`/api/admin/support-chats/${encodeURIComponent(chatId)}`),
+    sendSupportMessage: (chatId, text, files = []) => request(`/api/admin/support-chats/${encodeURIComponent(chatId)}/messages`, {
+      method: "POST",
+      body: chatMessageForm(text, files),
+      isFormData: true,
+    }),
   },
   support: {
     submit: (data) => {
@@ -200,6 +243,77 @@ export const api = {
       return request("/api/support/requests", { method: "POST", body: form, isFormData: true });
     },
     socialLinks: () => request("/api/support/social-links"),
+    myChat: () => request("/api/support/chats/me"),
+    sendMessage: (text, files = []) => request("/api/support/chats/me/messages", {
+      method: "POST",
+      body: chatMessageForm(text, files),
+      isFormData: true,
+    }),
+  },
+  partners: {
+    adminList: (search = "") => request(`/api/partners/admin?${new URLSearchParams({ search })}`),
+    adminCreate: (data) => request("/api/partners/admin", { method: "POST", body: data }),
+    adminDetails: (id) => request(`/api/partners/admin/${encodeURIComponent(id)}`),
+    adminUpdate: (id, data) => request(`/api/partners/admin/${encodeURIComponent(id)}`, { method: "PUT", body: data }),
+    adminDelete: (id) => request(`/api/partners/admin/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    adminExtend: (id, days) => request(`/api/partners/admin/${encodeURIComponent(id)}/subscription/extend`, { method: "POST", body: { days } }),
+    adminAddMember: (id, data) => request(`/api/partners/admin/${encodeURIComponent(id)}/members`, { method: "POST", body: data }),
+    adminUpdateMember: (partnerId, userId, data) => request(`/api/partners/admin/${encodeURIComponent(partnerId)}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: data }),
+    adminRemoveMember: (partnerId, userId) => request(`/api/partners/admin/${encodeURIComponent(partnerId)}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+    adminStudent: (partnerId, studentId) => request(`/api/partners/admin/${encodeURIComponent(partnerId)}/students/${encodeURIComponent(studentId)}`),
+    adminExportStudents: (partnerId, filters = {}) => {
+      const query = new URLSearchParams(filters);
+      return download(`/api/partners/admin/${encodeURIComponent(partnerId)}/students/export.xlsx?${query}`);
+    },
+    adminCommunities: (partnerId) => request(`/api/partners/admin/${encodeURIComponent(partnerId)}/communities`),
+    adminCreateCommunity: (partnerId, data) => request(`/api/partners/admin/${encodeURIComponent(partnerId)}/communities`, { method: "POST", body: data }),
+    adminUpdateCommunity: (partnerId, communityId, data) => request(`/api/partners/admin/${encodeURIComponent(partnerId)}/communities/${encodeURIComponent(communityId)}`, { method: "PUT", body: data }),
+    dashboard: () => request("/api/partners/dashboard"),
+    studentLearningContext: () => request("/api/partners/student-learning-context"),
+    exportStudents: (filters = {}) => {
+      const query = new URLSearchParams(filters);
+      return download(`/api/partners/students/export.xlsx?${query}`);
+    },
+    members: () => request("/api/partners/members"),
+    addMember: (data) => request("/api/partners/members", { method: "POST", body: data }),
+    updateMember: (id, data) => request(`/api/partners/members/${encodeURIComponent(id)}`, { method: "PUT", body: data }),
+    removeMember: (id) => request(`/api/partners/members/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    updateTrack: (data) => request("/api/partners/track", { method: "PUT", body: data }),
+    updateLearningMode: (discoveryEnabled) => request("/api/partners/learning-mode", {
+      method: "PUT",
+      body: { discovery_enabled: discoveryEnabled },
+    }),
+    communities: () => request("/api/partners/communities"),
+    createCommunity: (data) => request("/api/partners/communities", { method: "POST", body: data }),
+    updateCommunity: (communityId, data) => request(`/api/partners/communities/${encodeURIComponent(communityId)}`, { method: "PUT", body: data }),
+    assessments: () => request("/api/partners/assessments"),
+    createAssessment: (data) => request("/api/partners/assessments", { method: "POST", body: data }),
+    updateAssessment: (assessmentId, data) => request(`/api/partners/assessments/${encodeURIComponent(assessmentId)}`, { method: "PUT", body: data }),
+    submitAssessment: (assessmentId, answers) => request(`/api/partners/assessments/${encodeURIComponent(assessmentId)}/attempts`, { method: "POST", body: { answers } }),
+    importStudents: (file, confirm = false) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request(`/api/partners/members/import?confirm=${confirm}`, { method: "POST", body: form, isFormData: true });
+    },
+    importTemplate: () => download("/api/partners/members/import-template.xlsx"),
+    student: (id) => request(`/api/partners/students/${encodeURIComponent(id)}`),
+  },
+  certificates: {
+    send: ({ recipient_email, title, file }) => {
+      const form = new FormData();
+      form.append("recipient_email", recipient_email);
+      form.append("title", title || "");
+      form.append("file", file);
+      return request("/api/admin/certificates", { method: "POST", body: form, isFormData: true });
+    },
+    adminList: (search = "") => request(`/api/admin/certificates?${new URLSearchParams({ search })}`),
+    mine: () => request("/api/certificates"),
+    file: (certificateId) => download(`/api/certificates/${encodeURIComponent(certificateId)}/file`),
+    public: (shareToken) => request(`/api/certificates/share/${encodeURIComponent(shareToken)}`),
+    publicFileUrl: (shareToken, downloadFile = false) => {
+      const query = downloadFile ? "?download=true" : "";
+      return `${API_BASE}/api/certificates/share/${encodeURIComponent(shareToken)}/file${query}`;
+    },
   },
   subscriptions: {
     getPlans: () => request("/api/subscriptions/plans"),
@@ -254,9 +368,14 @@ export const api = {
       api.auth._saveSession(data);
       return data;
     },
-    loginWithProvider: async (provider, returnTo = "/onboarding") => {
+    loginWithProvider: async (provider, returnTo = "/onboarding", registrationData = null) => {
       if (provider !== "google") throw new Error("Only Google login is supported");
-      const qs = new URLSearchParams({ returnTo: returnTo || "/onboarding" });
+      const params = { returnTo: returnTo || "/onboarding" };
+      if (registrationData) {
+        params.phone_country = registrationData.phone_country;
+        params.phone_number = registrationData.phone_number;
+      }
+      const qs = new URLSearchParams(params);
       const res = await request(`/api/auth/google/login?${qs.toString()}`);
       const url = res.auth_url || res.data?.auth_url;
       if (!url) throw new Error("Google login failed to start — try again");
@@ -277,8 +396,8 @@ export const api = {
         window.location.href = `/login?google_error=${encodeURIComponent(e.message)}`;
       }
     },
-    register: async ({ email, password }) => {
-      const data = await request(`/api/auth/register`, { method: "POST", body: { email, password } });
+    register: async ({ email, password, full_name, phone_country, phone_number }) => {
+      const data = await request(`/api/auth/register`, { method: "POST", body: { email, password, full_name, phone_country, phone_number } });
       api.auth._saveSession(data);
       return data;
     },

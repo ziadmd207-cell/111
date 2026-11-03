@@ -9,6 +9,7 @@ const FIELD_MAP = {
   preferred_language: { ar: "لغة المحتوى", en: "Content language", map: { ar: ["عربي", "Arabic"], en: ["إنجليزي", "English"], mixed: ["مختلط", "Mixed"] } },
   depth: { ar: "العمق", en: "Depth", map: { overview: ["نظرة عامة", "Overview"], balanced: ["متوازن", "Balanced"], deep: ["تعمّق", "Deep"] } },
   career_intent: { ar: "هدفك المهني", en: "Career goal" },
+  field_motivation: { ar: "إيه اللي جذبك للمجال", en: "What attracted you to the field" },
   current_role: { ar: "الوظيفة المستهدفة", en: "Target role" },
   career_goal: { ar: "المسار اللي بتستهدفه", en: "Career direction" },
   target_role: { ar: "الوظيفة المستهدفة", en: "Target role" },
@@ -17,9 +18,21 @@ const FIELD_MAP = {
   specialization_interest: { ar: "التخصصات اللي جذبتك", en: "Specialization interests" },
   background: { ar: "خلفيتك", en: "Background" },
   education: { ar: "تعليمك", en: "Education" },
-  experience: { ar: "خبرتك", en: "Experience" },
+  experience: {
+    ar: "خبرتك",
+    en: "Experience",
+    map: {
+      none: ["لسه مفيش خبرة سابقة", "No prior experience yet"],
+      beginner: ["بداية من الصفر", "Starting from scratch"],
+    },
+  },
   obstacles: { ar: "التحديات", en: "Challenges" },
   stop_triggers: { ar: "حاجات بتضايقك في المذاكرة", en: "Study frustrations" },
+  distractions: {
+    ar: "الحاجات اللي بتشتتك",
+    en: "Study distractions",
+    map: { none: ["مفيش حاجة بتشتتني", "Nothing distracts me"] },
+  },
   weaknesses: { ar: "المهارات اللي محتاجة تقوية", en: "Skills to strengthen" },
   available_time: { ar: "الوقت المتاح", en: "Available time" },
   deadline: { ar: "الإطار الزمني", en: "Target timeline" },
@@ -45,32 +58,40 @@ const FIELD_MAP = {
   target_skills: { ar: "مهارات مستهدفة", en: "Target skills" },
   strengths: { ar: "نقاط قوتك", en: "Strengths" },
   goal: { ar: "المجال المختار", en: "Chosen field" },
-  available_days: { ar: "أيامك", en: "Days" }
+  available_days: { ar: "أيامك", en: "Days" },
+  study_hours_by_day: { ar: "ساعات المذاكرة لكل يوم", en: "Study hours per day" }
 };
 
 export default function DnaSummary({ profile, isAr, Arrow, onBack, onConfirm }) {
   const chips = Object.entries(FIELD_MAP)
     .map(([key, config]) => {
       const raw = profile?.[key];
-      if (!raw || (Array.isArray(raw) && raw.length === 0)) return null;
+      if (raw === null || raw === undefined || raw === "" || (Array.isArray(raw) && raw.length === 0)) return null;
+      if (key === "career_goal" && profile?.career_intent) return null;
+      if (key === "target_role" && profile?.current_role) return null;
+      if (key === "background" && profile?.education) return null;
       let value;
       if (Array.isArray(raw)) {
-        value = raw.map((d) => {
+        value = raw.map((item) => {
           const dayMap = { monday: isAr ? "الاثنين" : "Mon", tuesday: isAr ? "الثلاثاء" : "Tue", wednesday: isAr ? "الأربعاء" : "Wed", thursday: isAr ? "الخميس" : "Thu", friday: isAr ? "الجمعة" : "Fri", saturday: isAr ? "السبت" : "Sat", sunday: isAr ? "الأحد" : "Sun" };
-          return dayMap[d] || d;
+          return dayMap[String(item).toLowerCase()] || item;
         }).join("، ");
       } else if (config.map) {
-        value = config.map[raw] ? config.map[raw][isAr ? 0 : 1] : raw;
+        const mapped = config.map[String(raw).toLowerCase()];
+        value = mapped ? mapped[isAr ? 0 : 1] : raw;
       } else if (key === "weekly_hours") {
         value = `${raw} ${isAr ? "ساعات" : "hrs"}`;
-      } else if (key === "obstacles" || key === "weaknesses" || key === "strengths" || key === "known_skills" || key === "target_skills" || key === "interests") {
-        value = Array.isArray(raw) ? raw.join(isAr ? "، " : ", ") : String(raw);
+      } else if (key === "study_hours_by_day") {
+        const dayMap = { monday: isAr ? "الاثنين" : "Mon", tuesday: isAr ? "الثلاثاء" : "Tue", wednesday: isAr ? "الأربعاء" : "Wed", thursday: isAr ? "الخميس" : "Thu", friday: isAr ? "الجمعة" : "Fri", saturday: isAr ? "السبت" : "Sat", sunday: isAr ? "الأحد" : "Sun" };
+        value = Object.entries(raw).map(([day, hours]) => `${dayMap[day.toLowerCase()] || day}: ${hours} ${isAr ? "س" : "hrs"}`).join(isAr ? "، " : ", ");
+      } else if (raw && typeof raw === "object") {
+        value = Object.entries(raw).map(([label, item]) => `${label}: ${item}`).join(isAr ? "، " : ", ");
       } else {
         value = String(raw);
       }
       return { label: isAr ? config.ar : config.en, value };
     })
-    .filter(Boolean);
+    .filter((chip) => chip && String(chip.value).trim());
 
   return (
     <div className="animate-fade-up">
@@ -80,7 +101,7 @@ export default function DnaSummary({ profile, isAr, Arrow, onBack, onConfirm }) 
         </div>
         <h2 className="font-heading font-extrabold text-2xl sm:text-3xl">{isAr ? "ده الـ DNA بتاع تعلّمك" : "This is your Learning DNA"}</h2>
         <p className="text-muted-foreground mt-2 text-sm">
-          {isAr ? "دي الصورة اللي فهمتها عنك. لو حاجة مش دقيقة ارجع للمحادثة وصححها قبل ما نختار المجال." : "This is what I understood about you. If anything is off, return to the chat and correct it before choosing a field."}
+          {isAr ? "ده ملخص هدفك ووقتك وخبرتك وطريقة تعلّمك. راجعه، ولو معلومة مش دقيقة ارجع للمحادثة وصححها." : "This summarizes your goal, time, experience, and learning preferences. Review it and return to the chat if anything needs correction."}
         </p>
       </div>
 
@@ -88,8 +109,8 @@ export default function DnaSummary({ profile, isAr, Arrow, onBack, onConfirm }) 
         className="grid sm:grid-cols-2 gap-2.5 mb-6">
         {chips.map((c, i) => (
           <motion.div key={c.label} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 + i * 0.035 }}
-            className="zeus-glass rounded-xl border border-border/50 p-3">
-            <div className="text-[11px] font-semibold text-zeus-brightgold mb-1">{c.label}</div>
+            className="zeus-glass rounded-xl border border-border/70 bg-card/60 p-3">
+            <div className="text-[11px] font-semibold text-muted-foreground mb-1">{c.label}</div>
             <div className="text-sm text-foreground leading-relaxed break-words">{c.value}</div>
           </motion.div>
         ))}
@@ -102,7 +123,7 @@ export default function DnaSummary({ profile, isAr, Arrow, onBack, onConfirm }) 
 
       <div className="text-center mt-6">
         {onBack && (
-          <button onClick={onBack} className="block mx-auto mb-3 px-4 py-2 text-xs text-muted-foreground hover:text-zeus-brightgold transition">
+          <button onClick={onBack} className="block mx-auto mb-3 min-h-10 px-4 py-2 text-xs text-muted-foreground hover:text-foreground transition">
             {isAr ? "رجوع للمحادثة وتصحيح الإجابات" : "Back to chat and correct answers"}
           </button>
         )}

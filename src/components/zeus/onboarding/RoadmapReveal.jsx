@@ -1,12 +1,31 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Map, Rocket, Sparkles, Clock, ListChecks, AlertCircle, RotateCcw, ChevronDown } from "lucide-react";
+import { Loader2, Map, Rocket, Sparkles, Clock, ListChecks, AlertCircle, RotateCcw, ChevronDown, CalendarDays } from "lucide-react";
 import { ZEUS_IMAGES, withImageFallback } from "@/lib/zeus-images";
 
 export default function RoadmapReveal({ preview, typing, building, onBuild, onRetry, error, errorMessage, isAr, companionName }) {
   const nodes = preview?.nodes || [];
   const phases = [...new Set(nodes.map((n) => n.phase))].sort((a, b) => a - b);
-  const skills = [...new Set(nodes.flatMap((n) => n.skills || []))].slice(0, 10);
+  const weeks = [...new Set(nodes.map((n) => n.week).filter((week) => Number.isInteger(week) && week > 0))].sort((a, b) => a - b);
+  const skillSummary = phases.map((phase) => {
+    const phaseNodes = nodes.filter((node) => node.phase === phase);
+    const phaseSkills = [...new Set(
+      phaseNodes.flatMap((node) => Array.isArray(node.skills) ? node.skills : [])
+        .filter((skill) => typeof skill === "string" && skill.trim())
+        .map((skill) => skill.trim())
+    )];
+    return {
+      phase,
+      title: phaseNodes[0]?.phase_title || (isAr ? `المرحلة ${phase}` : `Phase ${phase}`),
+      objective: phaseNodes[0]?.phase_objective || "",
+      skills: phaseSkills,
+      tools: [...new Set(
+        phaseNodes.flatMap((node) => Array.isArray(node.tools) ? node.tools : [])
+          .filter((tool) => typeof tool === "string" && tool.trim())
+          .map((tool) => tool.trim())
+      )],
+    };
+  }).filter((group) => group.skills.length || group.tools.length || group.objective);
   const totalHours = nodes.reduce((sum, n) => sum + (n.estimated_hours || 0), 0);
   const totalProjects = nodes.reduce((sum, n) => sum + (n.projects || []).length, 0);
   const [stage, setStage] = useState(0);
@@ -64,8 +83,8 @@ export default function RoadmapReveal({ preview, typing, building, onBuild, onRe
         <div className="zeus-glass p-4 flex-1">
           <p className="text-sm leading-relaxed">
             {isAr
-              ? "بناءً على كلامنا، دي المهارات اللي شايفها الأنسب ليك والأكتر طلبًا في السوق — وقسمتهالك مراحل، كل واحدة بتبني على اللي قبلها."
-              : "Based on our talk, these are the skills I see as the best fit for you and most in demand — split into phases, each building on the last."}
+              ? "بناءً على هدفك ومستواك، دي خريطة متدرجة بمهارات ودروس مفصلة ومشروع تراكمي بعد كل مرحلة."
+                : "Based on your goal and current level, this roadmap breaks learning into focused lessons and a cumulative project after each phase."}
           </p>
         </div>
       </motion.div>
@@ -78,6 +97,7 @@ export default function RoadmapReveal({ preview, typing, building, onBuild, onRe
           {preview.market_research.research_providers?.length > 0 && (
             <p className="text-[10px] text-muted-foreground mb-2">
               {isAr ? "تم البحث عبر: " : "Researched with: "}{preview.market_research.research_providers.join(" + ")}
+              {preview.market_research.research_models?.length > 0 && ` (${preview.market_research.research_models.map((entry) => entry.model).join(" + ")})`}
             </p>
           )}
           {preview.market_research.roles?.length > 0 && (
@@ -106,11 +126,19 @@ export default function RoadmapReveal({ preview, typing, building, onBuild, onRe
           </p>
         </div>
       )}
+      {!preview.market_research?.sources?.length && (
+        <p className="rounded-xl border border-border/60 bg-card/50 px-4 py-3 mb-5 text-xs leading-relaxed text-muted-foreground">
+          {isAr
+            ? "لم تتوفر نتائج بحث وظيفي موثقة لهذه الخريطة؛ المهارات المقترحة ليست تأكيدًا لمتطلبات السوق الحالية."
+            : "No verified job-market research was available for this roadmap; suggested skills are not confirmation of current market requirements."}
+        </p>
+      )}
 
       {/* Stats */}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-4 gap-2 mb-5">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-5">
         {[
           { icon: Map, value: phases.length, label: isAr ? "مراحل" : "Phases" },
+          { icon: CalendarDays, value: weeks.length, label: isAr ? "أسابيع" : "Weeks" },
           { icon: Clock, value: totalHours, label: isAr ? "ساعة" : "Hours" },
           { icon: ListChecks, value: nodes.length, label: isAr ? "دروس" : "Lessons" },
           { icon: Rocket, value: totalProjects, label: isAr ? "مشاريع" : "Projects" }
@@ -126,20 +154,35 @@ export default function RoadmapReveal({ preview, typing, building, onBuild, onRe
         })}
       </motion.div>
 
-      {/* Skills reveal */}
+      {/* Skills summary */}
       <AnimatePresence>
         {stage >= 1 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-5">
             <div className="text-xs font-semibold uppercase tracking-wide text-zeus-brightgold flex items-center gap-1.5 mb-2.5">
-              <Sparkles style={{ width: 13, height: 13 }} /> {isAr ? "هنبني المهارات دي مع بعض" : "We'll build these skills together"}
+              <Sparkles style={{ width: 13, height: 13 }} /> {isAr ? "ملخص المهارات اللي هتكتسبها" : "Skills you'll gain"}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {skills.map((s, i) => (
-                <motion.span key={s} initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: i * 0.1, type: "spring", stiffness: 300, damping: 20 }}
-                  className="px-3 py-1.5 rounded-full bg-zeus-gold/10 border border-zeus-gold/30 text-zeus-brightgold text-xs font-medium">
-                  {s}
-                </motion.span>
+            <div className="zeus-glass rounded-xl p-3 space-y-3 max-h-64 overflow-y-auto pe-2">
+              {skillSummary.map((group) => (
+                <div key={group.phase}>
+                  <div className="text-[11px] font-semibold text-muted-foreground mb-1.5">{group.title}</div>
+                  {group.objective && <p className="text-[11px] text-muted-foreground leading-relaxed mb-2">{group.objective}</p>}
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.skills.map((skill) => (
+                      <span key={skill} className="px-2 py-1 rounded-full bg-zeus-gold/10 border border-zeus-gold/20 text-zeus-brightgold text-[11px]">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                  {group.tools.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {group.tools.map((tool) => (
+                        <span key={tool} className="px-2 py-1 rounded-full bg-secondary/40 text-muted-foreground text-[10px]">
+                          {isAr ? `أداة: ${tool}` : `Tool: ${tool}`}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </motion.div>
@@ -152,6 +195,7 @@ export default function RoadmapReveal({ preview, typing, building, onBuild, onRe
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2.5 max-h-[46vh] overflow-y-auto pe-1">
             {phases.map((p, i) => {
               const phaseNodes = nodes.filter((n) => n.phase === p);
+              const phaseWeeks = [...new Set(phaseNodes.map((node) => node.week).filter((week) => Number.isInteger(week) && week > 0))].sort((a, b) => a - b);
               const phaseProjects = phaseNodes.flatMap((n) => n.projects || []);
               const isExpanded = expandedPhase === p;
               return (
@@ -167,8 +211,17 @@ export default function RoadmapReveal({ preview, typing, building, onBuild, onRe
                     </div>
                     <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                   </button>
-                  {isExpanded && <div className="mt-3 ps-11 space-y-3">
-                    {phaseNodes.map((n) => (
+                  {isExpanded && <div className="mt-3 ps-11 space-y-4">
+                    {(phaseWeeks.length ? phaseWeeks : [null]).map((week) => (
+                      <div key={week ?? "unscheduled"} className="space-y-3">
+                        {week !== null && (
+                          <div className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                            <span className="h-px flex-1 bg-border/60" />
+                            <span>{isAr ? `الأسبوع ${week}` : `Week ${week}`}</span>
+                            <span className="h-px flex-1 bg-border/60" />
+                          </div>
+                        )}
+                        {phaseNodes.filter((node) => week === null || node.week === week).map((n) => (
                       <div key={n.id} className="border-s border-border/60 ps-3 space-y-1.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="font-semibold text-sm">{n.title}</div>
@@ -197,6 +250,8 @@ export default function RoadmapReveal({ preview, typing, building, onBuild, onRe
                             {isAr ? "سيتم البحث عن مصادر الدرس والتحقق منها عند فتحه." : "Lesson resources will be searched and verified when you open the lesson."}
                           </p>
                         )}
+                      </div>
+                    ))}
                       </div>
                     ))}
                   </div>}

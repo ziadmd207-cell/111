@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Play, BookOpen, Loader2, Lock, Bot, Brain, AlertCircle, Wrench, Rocket, FolderKanban, RotateCcw, Clock, Calendar } from "lucide-react";
+import { ArrowLeft, ArrowRight, Play, BookOpen, Loader2, Lock, Bot, Brain, AlertCircle, Wrench, Rocket, FolderKanban, RotateCcw, Clock } from "lucide-react";
 import { api } from "@/api/client";
 import { useI18n } from "@/lib/i18n";
+import { useAuth } from "@/lib/AuthContext";
+import { getUserTier, tierRank } from "@/lib/tier";
 import VideoPlayer from "@/components/zeus/lesson/VideoPlayer";
 import ReadingView from "@/components/zeus/lesson/ReadingView";
 import QuizPanel from "@/components/zeus/lesson/QuizPanel";
@@ -15,6 +17,7 @@ import FriendlyError from "@/components/zeus/ErrorBoundary";
 export default function Lesson() {
   const { lessonId } = useParams();
   const { t, lang, dir } = useI18n();
+  const { user } = useAuth();
   const isAr = lang === "ar";
   const Arrow = isAr ? ArrowLeft : ArrowRight;
   const nav = useNavigate();
@@ -27,6 +30,7 @@ export default function Lesson() {
   const [quizState, setQuizState] = useState("idle");
   const [answers, setAnswers] = useState({});
   const [result, setResult] = useState(null);
+  const [quizSubmitError, setQuizSubmitError] = useState("");
   const [nextLessonId, setNextLessonId] = useState(null);
   const [tutorOpen, setTutorOpen] = useState(false);
   const [tutorMessages, setTutorMessages] = useState([]);
@@ -34,6 +38,22 @@ export default function Lesson() {
   const [profile, setProfile] = useState(null);
   const [dailyMinutes, setDailyMinutes] = useState(0);
   const [overBudget, setOverBudget] = useState(false);
+  const [videoProgressError, setVideoProgressError] = useState("");
+
+  const reportVideoProgress = useCallback(({ videoId, positionSec, watchedSeconds }) => {
+    api.functions.invoke("updateVideoProgress", {
+      lessonId,
+      video_id: videoId,
+      position_sec: positionSec,
+      watched_seconds: watchedSeconds,
+    })
+      .catch((error) => setVideoProgressError(error.message || (isAr ? "تعذر حفظ تقدّم الفيديو." : "Could not save video progress.")));
+  }, [lessonId, isAr]);
+  const reportTrackingError = useCallback(() => {
+    setVideoProgressError(isAr
+      ? "الفيديو يعمل، لكن تعذّر تتبّع وقت المشاهدة في هذا المتصفح."
+      : "The video is playable, but watch-time tracking is unavailable in this browser.");
+  }, [isAr]);
 
   const applyPrepared = (data) => {
     setLesson(data);
@@ -52,9 +72,10 @@ export default function Lesson() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      setQuizState("idle"); setAnswers({}); setResult(null); setNextLessonId(null);
+      setQuizState("idle"); setAnswers({}); setResult(null); setQuizSubmitError(""); setNextLessonId(null);
       setDailyMinutes(0); setOverBudget(false);
       setVideoError(""); setPrepareError(false);
+      setVideoProgressError("");
       try {
         const [l, profs] = await Promise.all([
           withTimeout(api.entities.Lesson.get(lessonId)),
@@ -137,6 +158,7 @@ export default function Lesson() {
     // Fetch fresh validated quiz from backend; NEVER enter "taking" with a
     // broken/empty set (that used to strand users on unanswerable questions).
     setQuizStartError("");
+    setQuizSubmitError("");
     try {
       const res = await api.functions.invoke("generateQuiz", { lessonId, lang });
       const data = res.data || res;
@@ -183,7 +205,7 @@ export default function Lesson() {
   };
 
   const submitQuiz = async () => {
-    // Backend-computed grading + unlock (70% to pass). next_lesson_id comes from server.
+    setQuizSubmitError("");
     try {
       const res = await api.functions.invoke("submitQuiz", { lessonId, answers, lang });
       const data = res.data || res;
@@ -193,7 +215,15 @@ export default function Lesson() {
         return;
       }
       const quiz = lesson?.quiz || [];
-      setResult({ score: data.score, passed: data.passed, correct: Math.round((data.score / 100) * quiz.length), total: quiz.length });
+      setResult({
+        score: data.score,
+        passed: data.passed,
+        correct: data.mcq_correct ?? 0,
+        total: quiz.length,
+        earned_points: data.earned_points,
+        total_points: data.total_points,
+        feedback: data.feedback || [],
+      });
       setQuizState("submitted");
       if (data.passed) {
         if (data.next_lesson_id) {
@@ -216,19 +246,18 @@ export default function Lesson() {
           }
         } catch {}
       }
-    } catch {
-      // Friendly fallback: local grading with 70%
-      const quiz = lesson?.quiz || [];
-      let correct = 0;
-      quiz.forEach((q, i) => { if (answers[i] === q.correct) correct++; });
-      const score = quiz.length ? Math.round((correct / quiz.length) * 100) : 0;
-      const passed = score >= 70;
-      setResult({ score, passed, correct, total: quiz.length });
-      setQuizState("submitted");
+    } catch (error) {
+      setQuizSubmitError(error.message || (isAr ? "تعذر تصحيح الإجابات الآن. حاول الإرسال مرة أخرى." : "Couldn't grade your answers. Please retry."));
     }
   };
 
-  const retryQuiz = () => { setQuizState("taking"); setAnswers({}); setResult(null); };
+  const retryQuiz = () => {
+    setQuizState("idle");
+    setAnswers({});
+    setResult(null);
+    setQuizSubmitError("");
+    startQuiz();
+  };
 
   // Stage project review: backend grades + unlocks next phase on approval.
   const handleProjectReviewed = async (data) => {
@@ -281,13 +310,13 @@ export default function Lesson() {
     setPreparing(false);
   };
 
-  const sendTutor = async (text) => {
-    const userMsg = { role: "user", content: text, ts: new Date().toISOString() };
+  const sendTutor = async (text, images = []) => {
+    const userMsg = { role: "user", content: text, images, ts: new Date().toISOString() };
     const next = [...tutorMessages, userMsg];
     setTutorMessages(next);
     setTutorTyping(true);
     try {
-      const res = await api.functions.invoke("lessonTutor", { lessonId, messages: next.map(m => ({ role: m.role, content: m.content })), lang });
+      const res = await api.functions.invoke("lessonTutor", { lessonId, messages: next.map(m => ({ role: m.role, content: m.content, images: m.images || [] })), lang });
       const data = res.data || res;
       const replyText = (data.reply || "").trim();
       setTutorMessages([...next, { role: "assistant", content: replyText || (isAr ? "حصل خطأ، جرّب تاني" : "An error occurred, try again"), ts: new Date().toISOString() }]);
@@ -315,6 +344,7 @@ export default function Lesson() {
   );
 
   const isStageProject = lesson.node_id?.startsWith("stage_project_");
+  const canTakeQuiz = user?.role === "admin" || tierRank(getUserTier(user)) >= tierRank("PRO");
 
   return (
     <div dir={dir} className="space-y-5 pb-20">
@@ -325,7 +355,11 @@ export default function Lesson() {
         <div className="flex-1 min-w-0">
           <div className="text-xs text-zeus-brightgold font-semibold flex items-center gap-1">
             {isStageProject ? <Rocket style={{ width: 12, height: 12 }} /> : null}
-            {isStageProject ? (isAr ? `مشروع المرحلة ${lesson.phase}` : `Stage Project · Phase ${lesson.phase}`) : (isAr ? `المرحلة ${lesson.phase}` : `Phase ${lesson.phase}`)}
+            {isStageProject && lesson.node_id === "stage_project_final"
+              ? (isAr ? "مشروع التخرج" : "Capstone Project")
+              : isStageProject
+                ? (isAr ? `مشروع المرحلة ${lesson.phase}` : `Stage Project · Phase ${lesson.phase}`)
+                : (isAr ? `المرحلة ${lesson.phase}` : `Phase ${lesson.phase}`)}
           </div>
           <h1 className="font-heading font-extrabold text-xl sm:text-2xl truncate">{lesson.node_title}</h1>
         </div>
@@ -385,7 +419,10 @@ export default function Lesson() {
                         iframeUrl={lesson.video_iframe_url}
                         title={lesson.video_title || lesson.node_title}
                         duration={lesson.video_duration}
+                        onProgress={reportVideoProgress}
+                        onTrackingError={reportTrackingError}
                       />
+                      {videoProgressError && <p role="status" className="mt-2 text-xs text-amber-400">{videoProgressError}</p>}
                       <button onClick={changeVideo} disabled={changingVideo || regenLeft.video <= 0} title={isAr ? `تغيير الفيديو (متبقي ${regenLeft.video}/3)` : `Change video (${regenLeft.video}/3 left)`} className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-zeus-gold/40 text-zeus-brightgold text-xs font-semibold hover:bg-zeus-gold/10 transition disabled:opacity-50">
                         <RotateCcw style={{ width: 14, height: 14 }} className={changingVideo ? "animate-spin" : ""} />
                         {changingVideo ? (isAr ? "جاري تغيير الفيديو…" : "Changing video…") : (isAr ? `تغيير الفيديو (${regenLeft.video}/3)` : `Change video (${regenLeft.video}/3)`)}
@@ -494,15 +531,27 @@ export default function Lesson() {
               onNext={() => nextLessonId ? nav(`/lesson/${nextLessonId}`) : nav("/schedule")} />
           ) : (
             <>
-              <div className="zeus-glass p-4 mt-4">
-                <h3 className="font-heading font-bold text-sm mb-1">{isAr ? "اختبر نفسك 🧪" : "Test yourself 🧪"}</h3>
-                <p className="text-xs text-muted-foreground">{isAr ? "لازم تجيب 70% على الأقل عشان يتفتح الدرس اللي بعده. الأسئلة من المحتوى اللي شفته فقط." : "You need 70% to unlock next lesson. Questions are from content only."}</p>
-              </div>
-              <QuizPanel quiz={lesson.quiz || []} state={quizState} answers={answers} setAnswers={setAnswers} result={result}
-            onStart={startQuiz} onSubmit={submitQuiz} onRetry={retryQuiz}
-            onNext={() => nextLessonId ? nav(`/lesson/${nextLessonId}`) : nav("/schedule")} hasNext={!!nextLessonId} isAr={isAr}
-            startError={quizStartError} onRetryStart={startQuiz} />
-          {result?.credit && <FriendlyError onRetry={() => { setQuizState("taking"); setResult(null); }} />}
+              {canTakeQuiz ? (
+                <>
+                  <div className="zeus-glass p-4 mt-4">
+                    <h3 className="font-heading font-bold text-sm mb-1">{isAr ? "اختبر نفسك 🧪" : "Test yourself 🧪"}</h3>
+                    <p className="text-xs text-muted-foreground">{isAr ? "الاختبار 30 سؤالًا (25 اختيار من متعدد و5 مقالية)، ولازم تجيب 80% على الأقل عشان يتفتح الدرس اللي بعده." : "The quiz has 30 questions (25 multiple-choice and 5 essays); score at least 80% to unlock the next lesson."}</p>
+                  </div>
+                  <QuizPanel quiz={lesson.quiz || []} state={quizState} answers={answers} setAnswers={setAnswers} result={result}
+                    onStart={startQuiz} onSubmit={submitQuiz} onRetry={retryQuiz}
+                    onNext={() => nextLessonId ? nav(`/lesson/${nextLessonId}`) : nav("/schedule")} hasNext={!!nextLessonId} isAr={isAr}
+                    startError={quizStartError} submitError={quizSubmitError} onRetryStart={startQuiz} />
+                  {result?.credit && <FriendlyError onRetry={() => { setQuizState("taking"); setResult(null); }} />}
+                </>
+              ) : (
+                <button onClick={() => nav("/subscriptions")} className="w-full zeus-glass p-5 flex items-center gap-3 text-start hover:border-zeus-gold/40 transition">
+                  <Lock className="text-muted-foreground shrink-0" style={{ width: 18, height: 18 }} />
+                  <span>
+                    <span className="block font-heading font-bold text-sm">{isAr ? "الاختبارات متاحة مع باقة PRO" : "Quizzes are included with PRO"}</span>
+                    <span className="block mt-1 text-xs text-muted-foreground">{isAr ? "اعرف تفاصيل الباقات" : "View subscription plans"}</span>
+                  </span>
+                </button>
+              )}
             </>
           )}
 

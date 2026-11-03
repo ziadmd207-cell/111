@@ -7,12 +7,14 @@ class Settings(BaseSettings):
     use_sqlite_fallback: bool = False
     sqlite_url: str = "sqlite:///./zeus.db"
     openai_api_key: str = ""
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-20b"
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     allowed_origins: str = "http://localhost:5173,http://localhost:3000"
     uploads_dir: str = "./uploads"
     # Auth token signing (set a long random value in .env for production)
-    secret_key: str = "zeus-dev-secret-change-me"
+    secret_key: str = ""
     # YouTube Data API v3 (video search + view/like stats for quality ranking)
     youtube_api_key: str = ""
     # First admin account (seeded on startup; password always synced from env)
